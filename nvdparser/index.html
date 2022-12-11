@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html>
+    <head>
+        
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <link href='https://fonts.googleapis.com/css?family=Open Sans' rel='stylesheet'>
+        <script src="./nvdparser.js"></script>
+        <style>
+            a {
+                text-decoration: none;
+                color: darkslategray;
+            }
+            * {
+                font-family: 'Open Sans';
+                word-break: break-word;
+                overflow-wrap: break-word;
+            }
+            p {
+                font-size: 1em;
+            }
+            .vuln-container {
+                margin-top: 3em;
+                margin-bottom: 3em;
+            }
+            .vuln-data {
+                margin-top: 1em;
+                margin-bottom: 1em;
+            }
+            .header-container {
+                border-bottom: 2px solid lightgrey;
+            }
+            @media (min-width: 800px) or (max-width: 450px) {
+                .page-content {
+                    max-width: 800px;
+                    margin: auto;
+                }
+            }
+        </style>
+    </head>
+    <body>
+        <script>
+            window.onload = function() {
+                writeFeedToDom();
+            }
+        </script>
+    </body>
+</html>

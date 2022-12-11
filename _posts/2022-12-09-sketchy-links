@@ -1,0 +1,66 @@
+---
+title: Sketchy Links (a guide)
+date: 2022-12-09
+---
+
+This is a writeup about how sketchy websites can track your information. Tracking can begin the moment you actually click the link. The moral of the story is: don't click suspicious links.
+
+The most dangerous part about clicking unknown links is that you have no idea where they end up or how they intend to track you. Sometimes, people get curious and follow those links. The potential for risk increases the second you open the link; and even if it doesn't "look like anything happened," someone was able to collect some of your data.
+
+In most cases, they don't use any tactics that are overly fancy or difficult to implement. They tend to use really simple properties of the web. These structures are very easy to set up, and they get exactly as much data as they want.
+
+But, only if you click the link. Or load the invisible image.
+
+In webpages or emails, for example, you can embed a tracking URL which automatically loads as an invisible image:
+
+    <img width=0 height=0 src="https://sketchy.link/TOKEN" ...>
+
+If this is inserted into a webpage, it will load once the webpage loads. If this is sent in an HTML email, and your email client renders HTML, it will load automatically once your email is opened. Because the width and height are set to zero, you won't even see it.
+
+What's worse? This doesn't have to link to an actual image in order to track you. Instead, once the image is loaded, it will make a request to the website. 
+
+Anyone on the server who is looking at web connections to the server will see a line like this:
+
+    GET /TOKEN HTTP/1.1
+    host: https://sketchy.link
+    ...
+
+This tells them that somoene clicked the link. The "token" might be an identifier that lets them know, "Someone loaded the link."
+
+Further, they will be able to see your IP address. They can then start to map IP addresses to tokens. 
+
+If the token is unique to a spam or threat campaign, they can see which IP addresses fell for it, or which ones received it in the first place. If the token is unique to an email address, they now know who they can continue to target in the future. 
+
+In an SMS text message, the link might show up in plaintext along with a fake template, like:
+
+    Your package has arrived, click here: https://sketchy.link/TOKEN
+
+Unlike email or webpages, SMS links appear in plaintext, not hidden in markup. These are usually easier to detect because the link might actually look something like:
+
+    https://1qlkj5i3.xyz/X234W4Ta1X...
+
+It is also common practice for attackers to buy a domain that looks like a legitimate one, like:
+
+    https://ch4sebank.com
+
+These are a little more dangerous because, if you're not paying attention, you might mistake the URL for the actual Chase bank. 
+
+Like the other example, these can contain a "token" at the end, like:
+
+    https://ch4sebank.com/4AF98LjKEa...
+
+Once clicked, the attacker can see the IP of your phone. If the token is tied to your phone number, they now know that you actually clicked it; this tells them that you are more likely to fall for the same tactic again at another time.
+
+In some forensic cases, these links tend to redirect through different pages or servers. In many cases, the final page loaded is either blank, nonexistent, or is some innocent page or blog post. In these cases, it's those servers, the ones causing the redirections, that might track your inforamtion.
+
+The flow here might look something like:
+
+    open link --> server 1: redirect --> server 2: redirect --> ... --> final page: anything
+
+The final page that loads can be any page, owned by anyone. Do not use this as a sign that "nothing bad happened." The servers in between can see that you visited them.
+
+The best way to avoid all of this:
+
+- In your email client, disable the automatic fetching of remote resources. This includes images. Set it to block images etc. automatically. 
+- Reject any friend requests or profile views from anyone whom you do not personally know. These are usually the first attack vector for receiving unwanted spam and sketchy links.
+- Never click sketchy links. Ever. Visiting the domain itself will reveal your IP. The token at the end can track the success of a spam/attack campaign, or it can track you specifically as a potential victim for future campaigns.
