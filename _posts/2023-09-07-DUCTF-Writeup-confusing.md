@@ -405,8 +405,8 @@ For analyzing the variables in the stack, the key lines are here:
 ```
     114d:       48 83 ec 20             sub    rsp,0x20
     ...
-		1151:       48 8d 45 f2             lea    rax,[rbp-0xe]
-		...
+    1151:       48 8d 45 f2             lea    rax,[rbp-0xe]
+    ...
     116c:       c6 45 ee 41             mov    BYTE PTR [rbp-0x12],0x41
     ...
     1184:       f2 0f 11 45 f8          movsd  QWORD PTR [rbp-0x8],xmm0
@@ -414,9 +414,7 @@ For analyzing the variables in the stack, the key lines are here:
     ...
 ```
 
-At line 114d, 32 bytes (0x20 bytes) are allocated for local variables on the stack; this is more than enough for the four declared variables, at *8+4+2+4 = 18 bytes* total. At line 1151, we set up variable *d*, a short (2-byte) integer, as an argument to *scanf*. At line 1189, we pass *z*, a 4-byte integer, as an argument to *printf*. 
-
-Using this data, we can visualize the boundaries of each variable:
+Using these lines, we can visualize the boundaries of each variable:
 
 - *f*: `0x0 - 0x8`
 - *z*: `0x9 - 0xC`
