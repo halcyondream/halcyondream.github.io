@@ -46,7 +46,7 @@ With that in mind, we can execute the *system* function, and get the shell, by s
 - Convert *13337* to a long double (signed, 64 bits)
 - Convert *FLAG* to a 32-bit integer
 - Convert *1.6180339887* to an 8-byte (unsigned 64-bit) array
-- Use integer underflow or overflow to set the value of *z* to *-1*
+- Thorugh some means, set the value of *z* to *-1*
 
 Let's analyze the compiled binary's hardening:
 
@@ -69,7 +69,7 @@ This gives us some key information. First, becuase the binary is "hardened enoug
 
 # Setting d to 13337
 
-The first conversion will take eight bytes from STDIN and store the last two inside the short (2 byte) integer *d*. This one is a little more involved because we can use the same input to set the value of *z*.
+The first conversion will accept eight bytes from STDIN and store the last two inside the short (2 byte) integer *d*.
 
 First, let's convert *13337* to hex.
 
