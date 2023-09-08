@@ -416,12 +416,29 @@ For analyzing the variables in the stack, the key lines are here:
 
 Using these lines, we can visualize the boundaries of each variable:
 
-- *f*: `0x0 - 0x8`
+- *f*: `0x1 - 0x8`
 - *z*: `0x9 - 0xC`
 - *d*: `0xD - 0xE`
 - *s*: `0xF - 0x12`
 
 Thus, we can infer that, when *d* is set, the **next four bytes** will overflow and set the value of *z*.
+
+As a side note, we can observe the same behavior based on the disassembly of the `confusing` binary itself, where *d* is loaded at *RBP-0x1E* and *z* is at *RBP-0x1C*.
+
+```
+$objdump -M intel -d ./confusing
+...
+
+0000000000001250 <main>:
+...
+    1254:       55                      push   rbp
+    1255:       48 89 e5                mov    rbp,rsp
+    1258:       48 83 ec 20             sub    rsp,0x20
+...
+    1286:       48 8d 45 e2             lea    rax,[rbp-0x1e]
+...
+    12f0:       83 7d e4 ff             cmp    DWORD PTR [rbp-0x1c],0xffffffff
+```
 
 Let's go back to the payload from earlier: *0x1934909090909090*. If we can manipulate four bytes after *1934*, we can effectively set *z*. With that in mind, let's set those four bytes to *0xff*, the bytes equivalent of -1 for signed values.
 
