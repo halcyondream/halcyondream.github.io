@@ -10,7 +10,7 @@ As a workaround, you can either manipulate a byte to account for this offset. Fo
 
 # Background
 
-This writeup was inspired after watching [this Live Overflow video](https://www.youtube.com/watch?v=HSlhY4Uy8SA). It's a great walkthrough for a basic shellcode methodology. However, the prebuilt binary doesn't have GCC stack alignment enabled.
+This writeup was inspired after watching [this Live Overflow video](https://www.youtube.com/watch?v=HSlhY4Uy8SA). It's a great walkthrough for a basic shellcode methodology. However, the prebuilt binary doesn't have GCC stack alignment enabled, as evident in the disassembly at 1:40.
 
 If you take the same C code at the 0:30 mark, and build it yourself in Debian, you won't get the same results as-is. You'll have to modify the payload or the build. We will use that code verbatim in this walkthrough and illustrate what changes in the assembly.
 
@@ -42,7 +42,7 @@ bof.c:5:3: warning: implicit declaration of function ‘gets’; did you mean �
 bof.c:(.text+0x15): warning: the `gets' function is dangerous and should not be used.
 ```
 
-Its use case here is smple: to overwrite the buffer, a behavior you should *never* allow outside of an intentionally vulnerable proof-of-concept.
+Its use here is simple: to overwrite the buffer, a behavior you should *never* allow outside of an intentionally vulnerable proof-of-concept.
 
 On x86_64 and ARM64, you can build and test the code pretty simply:
 
@@ -112,11 +112,11 @@ esp            0x4242423e          0x4242423e
 
 The application tried to access *0x4242423e*. Notice that this almost matches the *BBBB* input from our payload. However, one byte is off. Why?
 
-At this point, you could try different payloads, and you'll notice the off-by-negative-four each time. The short answer is: stack alignment. You can easily trace it in the 32-bit disassembly.
+At this point, you could try different payloads, and you'll notice the off-by-negative-four each time. This is part of how GCC implements stack alignment. The reason why this happens is evident in the disassembly. 
 
 # GCC Stack Alignment
 
-But in this case, the answer lay in the disassembly:
+Disassemble the application logic:
 
 ```
 (gdb) disassemble main
@@ -153,7 +153,7 @@ Observe the LEA instruction at *0x565561c5* (*main*+56):
 lea    esp,[ecx-0x4]
 ```
 
-In short, the instruction is saying that the value in *ECX* will be subtracted by 4, then set as the address of *ESP*. Let's rerun and see what's in *ECX* before and after that instruction:
+In short, this instruction is saying that the value in *ECX* will be subtracted by 4, then set as the address of *ESP*. Let's rerun and see what's in *ECX* before and after that instruction:
 
 ```
 (gdb) b *(main+56)
