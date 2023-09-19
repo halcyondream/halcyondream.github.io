@@ -1,8 +1,8 @@
-```
+---
 layout: post
 title: Troubleshooting buffer overflows in your vulnerable 32-bit binary
 date: 2023-09-07
-```
+---
 
 This writeup will cover GCC's stack alignment features and how they can interfere with testing a simple 32-bit buffer overflow. GCC implement's stack alignment by using two LEA instructions, the second of which will change the value of your payload. 
 
