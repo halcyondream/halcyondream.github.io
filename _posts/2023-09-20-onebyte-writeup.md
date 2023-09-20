@@ -1,6 +1,6 @@
 ---
 layout: post
-title: "onebyte" walkthrough (DUCTF2023 challenge)
+title: DUCTF 2023 writeup for 'onebyte'
 date: 2023-09-19
 ---
 
