@@ -176,6 +176,15 @@ esp            0x4242423e          0x4242423e
 ecx            0x42424242          1111638594
 ```
 
+At *main*+56, if you try to access any memory at *ECX* or *ECX - 0x04*, you'll get an error:
+
+```
+(gdb) x/8wx $ecx
+0x42424242:     Cannot access memory at address 0x42424242
+(gdb) x/8wx $ecx-0x4
+0x4242423e:     Cannot access memory at address 0x4242423e
+```
+
 So, *ESP* is set to *0x42424242 - 0x4*, or *0x4242423e*. All because of that LEA instruction. Go back a bit in the disassembly and observe a similar instruction at the beginning of *main*:
 
 ```
@@ -196,9 +205,9 @@ Dump of assembler code for function main:
    0x000000000000113d <+4>:   sub    rsp,0x10
    0x0000000000001141 <+8>:   lea    rax,[rbp-0x4]
    0x0000000000001145 <+12>:  mov    rdi,rax
-   0x0000000000001148 <+15>:  mov   eax,0x0
+   0x0000000000001148 <+15>:  mov    eax,0x0
    0x000000000000114d <+20>:  call   0x1030 <gets@plt>
-   0x0000000000001152 <+25>:  mov   eax,0x0
+   0x0000000000001152 <+25>:  mov    eax,0x0
    0x0000000000001157 <+30>:  leave
    0x0000000000001158 <+31>:  ret
 ```
