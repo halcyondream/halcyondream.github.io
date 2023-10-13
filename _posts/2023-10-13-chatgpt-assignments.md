@@ -92,7 +92,7 @@ In the same way, A.I. can be included in the classroom to enhance a student's un
 
 The big takeaway for all these solutions is that they require students to prove that they understand how the LLM is working. In addition, many of these will lead to unique starting points for the assignment. However, unlike a simple code solution, the student is required to provide a novel soltuion.
 
-Any of these topics could be at least attempted with AI. But those results are generally of an unaccepable quality. Of course, if you find that something like ChatGPT is able to defeat your questions, then it's time to take your assignment back to the drawing board. 
+Any of these topics could be at least attempted with AI. But those results are generally of an unaccepable quality. Of course, if you find that something like ChatGPT is able to defeat your questions, then it's time to take your assignment back to the drawing board. In fact, that should be the baseline for whether you created an appropriately challenging question in the first place.
 
 However, these LLMs are still just machines that are defined by rules, which can always be defeated given enough effort (or, in many cases, with a bare-minimum effort). Deliverables like architecture diagrams or in-depth questioning may prove less feasible to generate. Conversely, they may also stand a higher chance of being detected by a traditional plagiarism detector.
 
