@@ -16,14 +16,11 @@ Recently I was browsing GitHub and came across a fun Worlde clone, written in ra
 
 While browsing, I encountered a few similar examples, also in Python. One particular implementation caught my eye; not because of the solution, but because the author wrote a working example, had an issue, couldn't explain the issue, and everyone else rightly pointed out that their code did, actually, work just fine. You see this kind of behavior with undergraduate code, where a well-intended student is learning a langauge and needs some support and maybe some empathy.
 
-But you also see this with undergraduate plagiarism. The latest version of undergraduate plagiarism is the content-generating features of ChatGPT. 
+But you also see this with undergraduate plagiarism. The latest version of undergraduate plagiarism is the content-generating features of platforms like ChatGPT, which are free and publicly available.
 
-I decided to explore some ChatGPT-detecting tools. This led me to GPTZero. I went into this tool with two questions:
+As someone who is well out of school, I wondered: Could someone *really* use ChatGPT to cheat without gettting caught? To answer this, we can "think like an adversary," where we try to look for the conditions that can lead a problem to manifest. Then, we can provide recommendations on how to prevent them from manifesting in the first place.
 
-- Could GPTZero detect code that I was generating via ChatGPT?
-- Could GPTZero effectively tell me whether a complete stranger's code examples were GPT-generated?
-
-First, the query for "my" code:
+So, let's assume that the assignment has a simple parameter: "generate a Worlde game." In ChatGPT, we can do so with the following query:
 
 > Write a Python3 Worlde game
 
@@ -34,6 +31,7 @@ You are welcome to reproduce the results on your own. Here were some common patt
 - Only one space between function calls or calsses. This is interesting because PEP8 calls for two spaces between classes or functions in a file
 - Most of the solutions used `if __name__ == "__main__"`. This fascinated me because a lot of junior programmers don't use this.
 - They all imported the `random` module and used a remarkably not-random function. We might want to encourage our developers to use functions that all system-level randomness (ex, */dev/urandom*) instead of simple pseudorandom functions.
+- None of the solutions were object-oriented unless explicitly specified. However, ChatGPT's solution was just a wrapper for the functions used in its non-object-oriented version.
 
 In sum, they were all *remarkably similar* to other solutions found online. But, let's assume good intentions&mdash;for now.
 
