@@ -6,7 +6,7 @@ date: 2023-10-13
 
 A.I. presents a new spin to the classic problem of cheating in higher-level education. To counter these challenges, I offer some ideas on how to develop assignments with the caveats presented by these content-generating platforms. As a whole, this should all promote a shift in the fidelity of assignments as well as the role of the instructional leadership teams for any course.
 
-As a baseline, I will first use ChatGPT to cheat on an assignment. Then, I will try to use GPTZero to determine if I had cheated in the first place. Proposals for assignments that can obsolete the need for either are then provided, along with considerations in how the instructional team can provide mentorship to students.
+As a baseline, I will first use ChatGPT to cheat on an assignment. Then, I will try to use GPTZero to determine if I had cheated in the first place. I conclude with ways to mitigate the cat-and-mouse game of GPT creation and detection, along with considerations for how the instructional team can use these opportunities to forster professional mentorship and create meaningful assignments.
 
 Let's begin with our first assignment: generating a Wordle clone in Python.
 
