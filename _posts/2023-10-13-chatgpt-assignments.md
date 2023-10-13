@@ -1,12 +1,12 @@
 ---
 layout: post
-title: Ideas for overcoming A.I. plagiarism in the classroom
+title: Ideas for adapting to A.I. plagiarism in the classroom
 date: 2023-10-13
 ---
 
-To counter the challenges that GPT brings to a classic academic curriculum, I offer some ideas on how to develop assignments with this caveat in mind. As a whole, AI challenges the entire mindset that we have about our higher-level institutions. Still, with this mindset comes opportunities for a more enriching education.
+A.I. presents a new spin to the classic problem of cheating in higher-level education. To counter these challenges, I offer some ideas on how to develop assignments with the caveats presented by these content-generating platforms. As a whole, this should all promote a shift in the fidelity of assignments as well as the role of the instructional leadership teams for any course.
 
-As a baseline, I will first use ChatGPT to cheat on an assignment. Then, I will try to use GPTZero to determine if I had cheated in the first place. Proposals for assignments that can obsolete the need for either are then provided, along with more overarching ideas about the role of the educator in the modern classroom.
+As a baseline, I will first use ChatGPT to cheat on an assignment. Then, I will try to use GPTZero to determine if I had cheated in the first place. Proposals for assignments that can obsolete the need for either are then provided, along with considerations in how the instructional team can provide mentorship to students.
 
 Let's begin with our first assignment: generating a Wordle clone in Python.
 
@@ -112,4 +112,6 @@ During my undergraduate experience, the best professors in my program were ones 
 
 Likewise, those same professors were usually the ones who offered challenging assignments and high levels of support, whether it be career advice, networking opportunities, or considerations for my personal or professional goals. They tried to adopt new developments in computer science, information technology, or any of the disciplines which are often groped together as "Cybersecurity." At the end of the day, these are the things that foster success. 
 
-Many undergraduates are fresh out of high school and still learning what it means to be a professional. If you are concerned about A.I. generated content overwhelming your curriculum, try to switch your point of view. Instead, you, as the leader, have an opportunity to mentor a semester's worth of upcoming professionals. And not just the ones who lead clubs and suck up to your face, but also the ones who want to do the right thing, the ones who want to be prepared for the ever-changing workforce which they are about to inherit.
+Many undergraduates are fresh out of high school and still learning what it means to be a professional. If you are concerned about A.I. generated content overwhelming your curriculum, try to switch your point of view. 
+
+You, as the leader, have an opportunity to mentor a semester's worth of upcoming professionals. And not just the ones who lead clubs and pay lip-service, or those who think they've manipulated the system because they're nice to your face; but, really, also the ones who want to do the right thing, the ones who want to be prepared for the ever-changing workforce which they are about to inherit. The ones who work 40 hours around school so they can get their education and eat every night. The ones who generate A.I. content because they feel no one cares enough to check in the first place.
