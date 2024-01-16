@@ -180,7 +180,7 @@ Still, if we can load the system, we can access it and inspect the contents. Thi
 
 ### Restoring the AMI VM image
 
-*Note: If you are doing this in TryHackMe, you can skip these steps unless you want to learn more about the underlying AWS service configuration. This is intended for people who are trying to access without the THM platform.*
+*Note: If you are doing this in TryHackMe, you can skip these steps unless you want to learn more about the underlying AWS service configuration. This is intended to build more on the approach from the lab.*
 
 The formal way to load an AMI image, even only with the purpose of extracting its contents, is to load it from an S3 bucket and import it as an EC2 instance. The bucket at *assets.bestcloudcompany.org* has solved the first step. Now let's approach the next.
 
@@ -269,7 +269,7 @@ Since this is closer to a prototype than a full-on application, we only need to 
 
 Take note of the *GroupId* value, which begins with "sg-", as you will need it when launching the instance. (In this screenshot, its full value is redacted, but yours will be a small hex string.)
 
-Now, launch the instance, using the configuration values you got from previous steps:
+Now, launch the instance, using the configuration values you got from previous steps. For simplicity, use the [t3a.micro instance type](https://aws.amazon.com/ec2/instance-types/).
 
 ```
 ~$ aws ec2 run-instances \
