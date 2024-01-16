@@ -59,7 +59,7 @@ In my case, no evidence of AWS Services appeared in the the page history or cont
 
 Now, let's try to find any subdomains associated with the site or organization. Often, subdomains point to additional resources for the organization, including webpage content, webapp resources, and separate applications. Sometimes, they point to storage units that hold backups or secrets.
 
-Let's start by using *Crt.sh* to enumerate any subdomains discovered by certificate transparency logs. Open the site and search for *bestcloudcompany.org*.
+Let's start by using *Crt.sh* to enumerate any subdomains discovered by certificate transparency logs. Open the site and search for *bestcloudcompany.org*. Results are listed [here](https://crt.sh/?q=bestcloudcompany.org).
 
 Observe that *assets.bestcloudcompany.org* appears. Based solely on the name, we can speculate whether this is used to store information for the organization's website. 
 
