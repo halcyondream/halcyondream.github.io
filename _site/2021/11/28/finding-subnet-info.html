@@ -1,0 +1,530 @@
+<!DOCTYPE html>
+<html lang="en"><head>
+  <meta charset="utf-8">
+  <meta http-equiv="X-UA-Compatible" content="IE=edge">
+  <meta name="viewport" content="width=device-width, initial-scale=1"><!-- Begin Jekyll SEO tag v2.8.0 -->
+<title>Finding Subnet Info | halcyondream</title>
+<meta name="generator" content="Jekyll v3.9.3" />
+<meta property="og:title" content="Finding Subnet Info" />
+<meta property="og:locale" content="en_US" />
+<meta name="description" content="Goals" />
+<meta property="og:description" content="Goals" />
+<link rel="canonical" href="http://localhost:4000/2021/11/28/finding-subnet-info.html" />
+<meta property="og:url" content="http://localhost:4000/2021/11/28/finding-subnet-info.html" />
+<meta property="og:site_name" content="halcyondream" />
+<meta property="og:type" content="article" />
+<meta property="article:published_time" content="2021-11-28T00:00:00-05:00" />
+<meta name="twitter:card" content="summary" />
+<meta property="twitter:title" content="Finding Subnet Info" />
+<script type="application/ld+json">
+{"@context":"https://schema.org","@type":"BlogPosting","dateModified":"2021-11-28T00:00:00-05:00","datePublished":"2021-11-28T00:00:00-05:00","description":"Goals","headline":"Finding Subnet Info","mainEntityOfPage":{"@type":"WebPage","@id":"http://localhost:4000/2021/11/28/finding-subnet-info.html"},"url":"http://localhost:4000/2021/11/28/finding-subnet-info.html"}</script>
+<!-- End Jekyll SEO tag -->
+<link rel="stylesheet" href="/assets/main.css"><link type="application/atom+xml" rel="alternate" href="http://localhost:4000/feed.xml" title="halcyondream" /></head>
+<body><header class="site-header" role="banner">
+
+  <div class="wrapper"><a class="site-title" rel="author" href="/">halcyondream</a><nav class="site-nav">
+        <input type="checkbox" id="nav-trigger" class="nav-trigger" />
+        <label for="nav-trigger">
+          <span class="menu-icon">
+            <svg viewBox="0 0 18 15" width="18px" height="15px">
+              <path d="M18,1.484c0,0.82-0.665,1.484-1.484,1.484H1.484C0.665,2.969,0,2.304,0,1.484l0,0C0,0.665,0.665,0,1.484,0 h15.032C17.335,0,18,0.665,18,1.484L18,1.484z M18,7.516C18,8.335,17.335,9,16.516,9H1.484C0.665,9,0,8.335,0,7.516l0,0 c0-0.82,0.665-1.484,1.484-1.484h15.032C17.335,6.031,18,6.696,18,7.516L18,7.516z M18,13.516C18,14.335,17.335,15,16.516,15H1.484 C0.665,15,0,14.335,0,13.516l0,0c0-0.82,0.665-1.483,1.484-1.483h15.032C17.335,12.031,18,12.695,18,13.516L18,13.516z"/>
+            </svg>
+          </span>
+        </label>
+
+        <div class="trigger"><a class="page-link" href="/about/">About</a></div>
+      </nav></div>
+</header>
+<main class="page-content" aria-label="Content">
+      <div class="wrapper">
+        <article class="post h-entry" itemscope itemtype="http://schema.org/BlogPosting">
+
+  <header class="post-header">
+    <h1 class="post-title p-name" itemprop="name headline">Finding Subnet Info</h1>
+    <p class="post-meta">
+      <time class="dt-published" datetime="2021-11-28T00:00:00-05:00" itemprop="datePublished">Nov 28, 2021
+      </time></p>
+  </header>
+
+  <div class="post-content e-content" itemprop="articleBody">
+    <h1 id="goals">Goals</h1>
+
+<p>By the end of this walkthrough, we will:</p>
+
+<ul>
+  <li>Understand CIDR notation</li>
+  <li>Convert binary to decimal</li>
+  <li>Determine a subnet mask from the CIDR subnet value</li>
+  <li>Determine the Subnet ID, Broadcast IP, start and end IP addresses for a subnet</li>
+</ul>
+
+<p>We cover two example IP addresses:</p>
+
+<ul>
+  <li>192.168.17.24/20</li>
+  <li>192.168.17.24/25</li>
+</ul>
+
+<p>In the first example, the most significant value is the third decimal/octet from the Host IP. In the second example, the fourth decimal/octet is the most important. The <em>way</em> we find the subnet properties changes depending on which decimal/octet is the most important.</p>
+
+<h1 id="ip-and-subnet-notation">IP and Subnet notation</h1>
+
+<p>CIDR notation looks like this, an IP and an integer between 0 and 32 (separated by a slash).</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>192.168.17.24/20
+</code></pre></div></div>
+
+<p>In this example:</p>
+
+<ul>
+  <li><strong>Host</strong>: <code class="language-plaintext highlighter-rouge">192.1618.17.24</code>. This is a specific IP on the network.</li>
+  <li><strong>Subnet</strong>: <code class="language-plaintext highlighter-rouge">20</code>. This means, “in binary, the first 20 digits out of 32 are 1’s.” The remaining digits are zeroes.</li>
+</ul>
+
+<h1 id="the-subnet-value-in-cidr-format">The subnet value in CIDR format</h1>
+
+<p>Let’s use the IP address <code class="language-plaintext highlighter-rouge">192.168.17.24/20</code> from the first part. We already establish that the subnet value is <strong>20</strong>. Here’s how that looks in binary:</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>11111111 11111111 11110000 00000000
+</code></pre></div></div>
+
+<p>Again, the subnet value (20) is the number of leading ones. The remaining digits are zeroes.</p>
+
+<p>Note that the first two octets (eight binary digits) are all one. Note also that the last octet is all zeroes.</p>
+
+<p>This matters when you need to get the value of the subnet <em>mask</em>. The full subnet mask can help you find other properties of the network: network address/subnet ID, first and last host addresses, and broadcast ID, to name a few.</p>
+
+<p>Note that the subnet mask is <code class="language-plaintext highlighter-rouge">255.255.240.0</code> in decimal. We get this value by converting it from the binary from noted here. In the next section, we will prove why.</p>
+
+<h1 id="binary-and-decimal-conversions">Binary and Decimal Conversions</h1>
+
+<p>To find the subnet properties, we need to know how to:</p>
+
+<ul>
+  <li>convert binary to decimal</li>
+  <li>convert decimal to binary</li>
+</ul>
+
+<h2 id="converting-binary-to-decimal">Converting binary to decimal</h2>
+
+<p>To get the subnet properties, we first need a way to convert binary to a decimal form. This is crucial to get a subnet mask from its binary form. There is an “easy” and “hard” part to this, but they should become easier with practice.</p>
+
+<h3 id="the-harder-part">The harder part</h3>
+
+<p>In short, each digit in an octet refers to values in base 2: 128, 64, 32, 16, 8, 4, 2, 1 (from left to right).</p>
+
+<ul>
+  <li>An octet like <code class="language-plaintext highlighter-rouge">10000000</code> equals <strong>128</strong> because the first digit is 1, which corresponds to 128.</li>
+  <li>An octet like <code class="language-plaintext highlighter-rouge">10000001</code> equals <strong>129</strong> because the first bit = 128 and the last bit = 1, such that 128 + 1 = 129.</li>
+  <li>As a final example, in <code class="language-plaintext highlighter-rouge">01100010</code> = <strong>98</strong>, because the bits 64, 32, and 2 are set to 1, such that 64 + 32 + 2 = 98.</li>
+</ul>
+
+<p>It could help to think of it with a table. Let’s use the final example, <code class="language-plaintext highlighter-rouge">01100010</code> = 98.</p>
+
+<table>
+  <thead>
+    <tr>
+      <th>Decimal</th>
+      <th>128</th>
+      <th>64</th>
+      <th>32</th>
+      <th>16</th>
+      <th>8</th>
+      <th>4</th>
+      <th>2</th>
+      <th>1</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>Binary bit</td>
+      <td>0</td>
+      <td>1</td>
+      <td>1</td>
+      <td>0</td>
+      <td>0</td>
+      <td>0</td>
+      <td>1</td>
+      <td>0</td>
+    </tr>
+  </tbody>
+</table>
+
+<p>The sum of the decimal value(s) in the top row is the . Spreading out the digits like this, you can clearly see which bit corresponds with each decimal. The sum is the decimal value.</p>
+
+<p>As a final example, consider the third octet in the subnet mask, <code class="language-plaintext highlighter-rouge">11110000</code>. The bits for 128, 64, 32, and 16 are set. The sum of these is 128+64+32+16 = <strong>240</strong>.</p>
+
+<h2 id="the-easier-part">The easier part</h2>
+
+<p>With that in mind, let’s consider two fringe cases: an octet of all ones, and an octet of all zeroes. These are very easy to identify.</p>
+
+<ul>
+  <li>All ones = <strong>255</strong>. Think about why. If every bit is set, then the sum of all bits is just 128+64+32+16+8+4+2+1 = 255.</li>
+  <li>All zeroes = <strong>0</strong>. Conversely, if <em>no bits</em> are set, then the sum of eight zeroes is just zero.</li>
+</ul>
+
+<p>In the subnet mask example (previous section), note that the first two octets are all ones, and the final octet is all zeroes.</p>
+
+<h2 id="the-subnet-mask-example">The subnet mask example</h2>
+
+<p>Using the previous two subsections, we can convert the binary subnet mask:</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>11111111 11111111 11110000 00000000
+</code></pre></div></div>
+
+<p>Converting to decimal values:</p>
+
+<ul>
+  <li><code class="language-plaintext highlighter-rouge">11111111</code> = 255</li>
+  <li><code class="language-plaintext highlighter-rouge">11111111</code> = 255</li>
+  <li><code class="language-plaintext highlighter-rouge">11110000</code> = 240</li>
+  <li><code class="language-plaintext highlighter-rouge">00000000</code> = 0</li>
+</ul>
+
+<p>So, the subnet mask is <code class="language-plaintext highlighter-rouge">255.255.240.0</code>.</p>
+
+<h2 id="converting-decimal-to-binary">Converting decimal to binary</h2>
+
+<p>This is the opposite of the previous section. Read it first. Before going any farther, keep in mind that the largest value you will work with in a subnet or IP is 255, and the lowest value is zero. This approach only works because of that fact. Also, this approach uses integer divisions; don’t worry about decimals or fractions.</p>
+
+<p>The approach is something like this:</p>
+
+<ul>
+  <li>Divide the decimal number by the next-lowest bit decimal. Note its quotient (either 1 or 0) and modulus (remainder, integer).</li>
+  <li>If the quotient is 1, mark a 1 is the corresponding bit location.</li>
+  <li>Repeat this with the remainder and the next-lowest bit decimal with respect to the remainder.</li>
+  <li>If the remainder skips any bit-decimal places, mark those spots as zeroes.</li>
+  <li>Stop when the quotient is zero.</li>
+</ul>
+
+<p>As an example, let’s convert the value 240, since we already know what it looks like:</p>
+
+<ul>
+  <li>240 mod 128 = 112, 240/128 = 1</li>
+  <li>112 mod 64 = 48, 112/64 = 1</li>
+  <li>48 mod 32 = 16, 48/32 = 1</li>
+  <li>16 mod 16 = 0, 16 / 16 = 1</li>
+  <li>0 mod 8 = 0, 0/8 = 0 (done)</li>
+</ul>
+
+<p>The first four bits are set, <code class="language-plaintext highlighter-rouge">11110000</code>.</p>
+
+<h3 id="in-python">In Python…</h3>
+
+<div class="language-python highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="n">DECIMALS</span> <span class="o">=</span> <span class="p">[</span>
+    <span class="mi">128</span><span class="p">,</span>
+    <span class="mi">64</span><span class="p">,</span>
+    <span class="mi">32</span><span class="p">,</span>
+    <span class="mi">16</span><span class="p">,</span>
+    <span class="mi">8</span><span class="p">,</span>
+    <span class="mi">4</span><span class="p">,</span>
+    <span class="mi">2</span><span class="p">,</span>
+    <span class="mi">1</span>
+<span class="p">]</span>
+
+
+<span class="k">def</span> <span class="nf">get_binary</span><span class="p">(</span><span class="n">n</span><span class="p">:</span> <span class="nb">int</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
+    <span class="s">"""Get the binary representation of the decimal input."""</span>
+    
+    <span class="n">binary</span> <span class="o">=</span> <span class="p">[]</span>
+    <span class="n">m</span> <span class="o">=</span> <span class="n">n</span>
+    
+    <span class="k">for</span> <span class="n">d</span> <span class="ow">in</span> <span class="n">DECIMALS</span><span class="p">:</span>
+        
+        <span class="n">binary</span><span class="p">.</span><span class="n">append</span><span class="p">(</span><span class="s">"1"</span> <span class="k">if</span> <span class="n">m</span><span class="o">//</span><span class="n">d</span> <span class="k">else</span> <span class="s">"0"</span><span class="p">)</span>
+        <span class="n">m</span> <span class="o">%=</span> <span class="n">d</span>
+    
+    <span class="k">return</span> <span class="s">''</span><span class="p">.</span><span class="n">join</span><span class="p">(</span><span class="n">binary</span><span class="p">)</span>
+
+
+<span class="k">print</span><span class="p">(</span><span class="n">get_binary</span><span class="p">(</span><span class="mi">240</span><span class="p">))</span>	<span class="c1"># Prints `11110000` to the console.
+</span></code></pre></div></div>
+
+<h1 id="subnet-properties">Subnet properties</h1>
+
+<p>Using this, we can identify the following:</p>
+
+<ul>
+  <li>Number of hosts per subnet</li>
+  <li>Subnet ID/Subnet IP/Network Address</li>
+  <li>Broadcast IP</li>
+  <li>Start and end host IPs</li>
+</ul>
+
+<p>For this section, we are going to make our lives easier and use <code class="language-plaintext highlighter-rouge">192.168.17.24/20</code>. We show earlier how to get the subnet mask, which is <code class="language-plaintext highlighter-rouge">255.255.240.0</code>. We need <strong><em>both of these</em></strong> values to perform the following steps.</p>
+
+<p>If you want to see what these values look like quickly, just use a Subnet calculator. If you want to cheat, this host IP/subnet is already loaded <a href="https://www.calculator.net/ip-subnet-calculator.html?cclass=any&amp;csubnet=20&amp;cip=192.168.17.12&amp;ctype=ipv4&amp;printit=0&amp;x=94&amp;y=18">here</a> (along with more information). The following will explain how to get these values.</p>
+
+<h2 id="determining-the-subnet-ip">Determining the Subnet IP</h2>
+
+<p>Think about the given Host IP and Subnet Mask as four decimal values separated by periods. Each value represents a binary octet. Now, think about each of these four numbers/octets in the Host IP “lining up” with those in the Subnet Mask. We can visualize this like:</p>
+
+<table>
+  <thead>
+    <tr>
+      <th>192</th>
+      <th>168</th>
+      <th>17</th>
+      <th>24</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>255</td>
+      <td>255</td>
+      <td>240</td>
+      <td>0</td>
+    </tr>
+  </tbody>
+</table>
+
+<p>With this in mind, we can get the subnet IP pretty easily:</p>
+
+<ul>
+  <li>If a decimal lines up with a 255, keep that value. In this example, the numbers <strong>192</strong> and <strong>168</strong> line up with a 255.</li>
+  <li>if a decimal lines up with a zero, use the value <strong>0</strong> (disregard its host number). In this example, the <strong>24</strong> lines up with a zero. So, we ignore it in the subnet IP.</li>
+</ul>
+
+<p>So far, we have the following parts of the Subnet IP:</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>192.168._ _ _.0
+</code></pre></div></div>
+
+<p>The third decimal/octet lines up with 240. This will require a bit more work.</p>
+
+<p>First, get the binary representations of each number. Using the decimal-to-binary approach, we find that 17 is <code class="language-plaintext highlighter-rouge">00010001</code>. Using our notes from earlier, recall that 240 is <code class="language-plaintext highlighter-rouge">11110000</code>.</p>
+
+<p>Line up these two octets:</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>00010001
+11110000
+</code></pre></div></div>
+
+<p>We use this to make a new octet, convert that to decimal, and use it in the Subnet IP.</p>
+
+<p>If a bit is <code class="language-plaintext highlighter-rouge">1</code> in <em>both octets</em>, then that value persists into the new octet. In this example, the fourth octet is 1 in both. Recall from earlier that this value corresponds to 16.</p>
+
+<p>We can use a table to show this:</p>
+
+<table>
+  <thead>
+    <tr>
+      <th>Decimal</th>
+      <th>128</th>
+      <th>64</th>
+      <th>32</th>
+      <th>16</th>
+      <th>8</th>
+      <th>4</th>
+      <th>2</th>
+      <th>1</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>17</td>
+      <td>0</td>
+      <td>0</td>
+      <td>0</td>
+      <td><strong>1</strong></td>
+      <td>0</td>
+      <td>0</td>
+      <td>0</td>
+      <td>1</td>
+    </tr>
+    <tr>
+      <td>240</td>
+      <td>1</td>
+      <td>1</td>
+      <td>1</td>
+      <td><strong>1</strong></td>
+      <td>0</td>
+      <td>0</td>
+      <td>0</td>
+      <td>0</td>
+    </tr>
+  </tbody>
+</table>
+
+<p>So, the third decimal is just <strong>16</strong>.</p>
+
+<p>The full subnet IP is thus:</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>192.168.16.0
+</code></pre></div></div>
+
+<h2 id="determining-the-number-of-hosts-per-subnet">Determining the number of hosts per subnet</h2>
+
+<p>First, determine the number of <strong><em>host bits per subnet</em></strong>. You can find this by using the CIDR subnet number. Recall that this value is between 0 and 32: the number of possible 1’s in the subnet mask. Since the value can have a maximum of 32 1’s, then subtract 32 from the CIDR subnet value.</p>
+
+<p>In our case, 32 - 20 = <strong>12</strong> bits.</p>
+
+<p>Fun fact, this is the number of trailing zeroes in the subnet mask. (You can count them in the binary representation from earlier.)</p>
+
+<p>With this number of host bits per subnet, we get the actual hosts per subnet by raising 2 to the power of b bits, and subtracting 2 from that product. (We subtract two because the Subnet IP and Broadcast IP are reserved values.)</p>
+
+<p>For this subnet, 2^{12} - 2 = 4096.</p>
+
+<p>So, this subnet can support up to <strong>4096</strong> hosts.</p>
+
+<p>Note that this is the total number of hosts across all subnets. To get the broadcast ID for this subnet, we need to get the number of subnets.</p>
+
+<h2 id="the-number-of-subnets">The number of subnets</h2>
+
+<p>To calculate the number of subnets, we need the number of bits borrowed (which are allowed for subnet/network creation, and are thus unavailable to hosts on this network). The bits borrowed from the host is the difference between 8 and the number of bits in the subnet mask’s binary octet which is not all ones or all zeroes. In this example, the number is 240, which is <code class="language-plaintext highlighter-rouge">11110000</code>. So, there are four (4) borrowed bits.</p>
+
+<p>To get the number of subnets, raise 2 to the power of borrowed-bits. In this case:</p>
+
+<p>​	2^{4} = 16</p>
+
+<p>So, this network has <strong>16 subnets</strong>.</p>
+
+<h2 id="start-and-end-host-ips">Start and End Host IPs</h2>
+
+<h3 id="start-ip">Start IP</h3>
+
+<p>The <strong>start IP</strong> is just the Subnet IP’s fourth decimal value (zero) plus one: in this case, <code class="language-plaintext highlighter-rouge">192.168.16.1</code>.</p>
+
+<h3 id="end-ip">End IP</h3>
+
+<p>The <strong>end IP</strong> is the start IP + number of hosts: so, 192.168.16.1 + 4096. Note that we will need to do a bit of work, as the third decimal place (16) increases. This third value in the end IP increases by the number of hosts divided by the number of subnets—minus one. (The “minus one” is an offset for the start IP of the next subnet). In this case:</p>
+
+<p>​	(4096 / 16) - 1 = 15</p>
+
+<p>Since this is the third decimal, the fourth decimal will end with 254. <em>(Recall the range of 256 = {0, …, 255}, where the Subnet IP takes 0 and the Broadcast IP takes 255.)</em></p>
+
+<p>Thus, the end IP is <code class="language-plaintext highlighter-rouge">192.168.31.254</code>.</p>
+
+<h4 id="note-about-how-we-got-the-end-ip">Note about how we got the End IP…</h4>
+
+<p>As a final note: we change the value of the third octet because it aligns with a non-zero subnet octet. In many cases, the fourth octet is changed in the same manner that we used for the third one here. If you want to see this, try this activity with values <code class="language-plaintext highlighter-rouge">/24</code> through <code class="language-plaintext highlighter-rouge">/32</code> instead.</p>
+
+<h2 id="determining-the-broadcast-ip">Determining the Broadcast IP</h2>
+
+<p>Finally, the Broadcast IP is the End IP’s final octet + 1: <code class="language-plaintext highlighter-rouge">192.168.31.255</code>.</p>
+
+<h2 id="tldr">tl;dr</h2>
+
+<table>
+  <thead>
+    <tr>
+      <th>Name</th>
+      <th>Value</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>IP Address:</td>
+      <td>192.168.17.12</td>
+    </tr>
+    <tr>
+      <td>Network Address:</td>
+      <td>192.168.16.0</td>
+    </tr>
+    <tr>
+      <td>Usable Host IP Range:</td>
+      <td>192.168.16.1 - 192.168.31.254</td>
+    </tr>
+    <tr>
+      <td>Broadcast Address:</td>
+      <td>192.168.31.255</td>
+    </tr>
+    <tr>
+      <td>Total Number of Hosts:</td>
+      <td>4,096</td>
+    </tr>
+    <tr>
+      <td>Number of Usable Hosts:</td>
+      <td>4,094</td>
+    </tr>
+    <tr>
+      <td>Subnet Mask:</td>
+      <td>255.255.240.0</td>
+    </tr>
+  </tbody>
+</table>
+
+<h2 id="what-if-the-subnet-changes">What if the subnet changes?</h2>
+
+<p>Say the subnet changes from 20 to 25. In this case, you will, unfortunately, have to repeat all of these steps to find the new values. Don’t kill the messenger.</p>
+
+<p>When this happens, the “borrowed bits” is just the difference between the original and new subnet value from the CIDR form. If we increase that value from 20 to 25, then there are 4 borrowed bits (25 - 20 = 5). The CIDR IP looks like:</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>192.168.17.24/25
+</code></pre></div></div>
+
+<p>Since we know there are 25 leading 1’s, the subnet mask is 255.255.255.128. In this case, the subnet’s fourth octet (10000000 or 128) is the one that will change.</p>
+
+<p><em>Note: Anything between 24 and 32 is actually an easier subnet to work with. The previous section took a bit more work because we needed to get the number of subnets in order to calculate the number of hosts per subnet. In this section, we do not need this: we just use the hosts per subnet value and ignore the number of hosts per subnet.</em></p>
+
+<p>The Subnet IP/Network Address is based on the final decimal/octet. (The first three subnet values are 255. So, we retain 192, 168, and 17 in this subnet.) We prove that the fourth decimal in this address will just be zero (0).</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>00011000	# 24 from the Host IP.
+10000000	# 128 from the Subnet Mask.
+--------
+00000000	# Subnet IP/Network Address
+</code></pre></div></div>
+
+<p>The Subnet IP/Network Address is <strong>192.168.17.0</strong>. This yields a start IP of <strong>192.168.17.1</strong>.</p>
+
+<p>The number of hosts is 2^{32 - 5} = 2^{7} = <strong>128</strong>. So, the hosts per subnet is 128 - 2 = <strong>126</strong>. The end IP is just the subnet IP plus the hosts per subnet: 192.168.17.(0 + 126) = <strong>192.168.17.126</strong>.</p>
+
+<p>Using the steps noted earlier, we can derive the <a href="https://www.calculator.net/ip-subnet-calculator.html?cclass=any&amp;csubnet=25&amp;cip=192.168.17.12&amp;ctype=ipv4&amp;printit=0&amp;x=75&amp;y=37">following subnet info</a>:</p>
+
+<table>
+  <thead>
+    <tr>
+      <th>Name</th>
+      <th>Value</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>Network Address:</td>
+      <td>192.168.17.0</td>
+    </tr>
+    <tr>
+      <td>Usable Host IP Range:</td>
+      <td>192.168.17.1 - 192.168.17.126</td>
+    </tr>
+    <tr>
+      <td>Broadcast Address:</td>
+      <td>192.168.17.127</td>
+    </tr>
+  </tbody>
+</table>
+
+<p><em><strong>Note:</strong> As explained earlier, we do not really need the number of subnets for this question. This is because the fourth decimal/octet updates, not the third one. So, we do not need to divide the total hosts (128) by this value. Still, we can use this value to show different IP ranges for this subnet. Note that the number of subnets are 2^{8 - (32 - 5)} = 2^{8 - 7} = 2^{1} = <strong>2</strong>. If we needed to show the the next subnet range (including Subnet and Broadcast IPs), we note that it just includes the next 128 hosts. Its range is <code class="language-plaintext highlighter-rouge">192.168.17.129 - 192.168.17.255</code>. Since there are only two subnets, we are done.</em></p>
+
+
+  </div><a class="u-url" href="/2021/11/28/finding-subnet-info.html" hidden></a>
+</article>
+
+      </div>
+    </main><footer class="site-footer h-card">
+  <data class="u-url" href="/"></data>
+
+  <div class="wrapper">
+
+    <h2 class="footer-heading">halcyondream</h2>
+
+    <div class="footer-col-wrapper">
+      <div class="footer-col footer-col-1">
+        <ul class="contact-list">
+          <li class="p-name">halcyondream</li></ul>
+      </div>
+
+      <div class="footer-col footer-col-2"><ul class="social-media-list"><li><a href="https://github.com/halcyondream"><svg class="svg-icon"><use xlink:href="/assets/minima-social-icons.svg#github"></use></svg> <span class="username">halcyondream</span></a></li></ul>
+</div>
+
+      <div class="footer-col footer-col-3">
+        <p>Portfolio for Cybersecurity projects, research, and developments.</p>
+      </div>
+    </div>
+
+  </div>
+
+</footer>
+</body>
+
+</html>

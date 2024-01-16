@@ -1,0 +1,355 @@
+<!DOCTYPE html>
+<html lang="en"><head>
+  <meta charset="utf-8">
+  <meta http-equiv="X-UA-Compatible" content="IE=edge">
+  <meta name="viewport" content="width=device-width, initial-scale=1"><!-- Begin Jekyll SEO tag v2.8.0 -->
+<title>Troubleshooting buffer overflows in your vulnerable 32-bit binary | halcyondream</title>
+<meta name="generator" content="Jekyll v3.9.3" />
+<meta property="og:title" content="Troubleshooting buffer overflows in your vulnerable 32-bit binary" />
+<meta property="og:locale" content="en_US" />
+<meta name="description" content="This writeup will cover GCC’s stack alignment features and how they can interfere with testing a simple 32-bit buffer overflow. GCC implement’s stack alignment by using two LEA instructions, the second of which will change the value of your payload." />
+<meta property="og:description" content="This writeup will cover GCC’s stack alignment features and how they can interfere with testing a simple 32-bit buffer overflow. GCC implement’s stack alignment by using two LEA instructions, the second of which will change the value of your payload." />
+<link rel="canonical" href="http://localhost:4000/2023/09/19/buffer-overflow-stack-alignment.html" />
+<meta property="og:url" content="http://localhost:4000/2023/09/19/buffer-overflow-stack-alignment.html" />
+<meta property="og:site_name" content="halcyondream" />
+<meta property="og:type" content="article" />
+<meta property="article:published_time" content="2023-09-19T00:00:00-04:00" />
+<meta name="twitter:card" content="summary" />
+<meta property="twitter:title" content="Troubleshooting buffer overflows in your vulnerable 32-bit binary" />
+<script type="application/ld+json">
+{"@context":"https://schema.org","@type":"BlogPosting","dateModified":"2023-09-19T00:00:00-04:00","datePublished":"2023-09-19T00:00:00-04:00","description":"This writeup will cover GCC’s stack alignment features and how they can interfere with testing a simple 32-bit buffer overflow. GCC implement’s stack alignment by using two LEA instructions, the second of which will change the value of your payload.","headline":"Troubleshooting buffer overflows in your vulnerable 32-bit binary","mainEntityOfPage":{"@type":"WebPage","@id":"http://localhost:4000/2023/09/19/buffer-overflow-stack-alignment.html"},"url":"http://localhost:4000/2023/09/19/buffer-overflow-stack-alignment.html"}</script>
+<!-- End Jekyll SEO tag -->
+<link rel="stylesheet" href="/assets/main.css"><link type="application/atom+xml" rel="alternate" href="http://localhost:4000/feed.xml" title="halcyondream" /></head>
+<body><header class="site-header" role="banner">
+
+  <div class="wrapper"><a class="site-title" rel="author" href="/">halcyondream</a><nav class="site-nav">
+        <input type="checkbox" id="nav-trigger" class="nav-trigger" />
+        <label for="nav-trigger">
+          <span class="menu-icon">
+            <svg viewBox="0 0 18 15" width="18px" height="15px">
+              <path d="M18,1.484c0,0.82-0.665,1.484-1.484,1.484H1.484C0.665,2.969,0,2.304,0,1.484l0,0C0,0.665,0.665,0,1.484,0 h15.032C17.335,0,18,0.665,18,1.484L18,1.484z M18,7.516C18,8.335,17.335,9,16.516,9H1.484C0.665,9,0,8.335,0,7.516l0,0 c0-0.82,0.665-1.484,1.484-1.484h15.032C17.335,6.031,18,6.696,18,7.516L18,7.516z M18,13.516C18,14.335,17.335,15,16.516,15H1.484 C0.665,15,0,14.335,0,13.516l0,0c0-0.82,0.665-1.483,1.484-1.483h15.032C17.335,12.031,18,12.695,18,13.516L18,13.516z"/>
+            </svg>
+          </span>
+        </label>
+
+        <div class="trigger"><a class="page-link" href="/about/">About</a></div>
+      </nav></div>
+</header>
+<main class="page-content" aria-label="Content">
+      <div class="wrapper">
+        <article class="post h-entry" itemscope itemtype="http://schema.org/BlogPosting">
+
+  <header class="post-header">
+    <h1 class="post-title p-name" itemprop="name headline">Troubleshooting buffer overflows in your vulnerable 32-bit binary</h1>
+    <p class="post-meta">
+      <time class="dt-published" datetime="2023-09-19T00:00:00-04:00" itemprop="datePublished">Sep 19, 2023
+      </time></p>
+  </header>
+
+  <div class="post-content e-content" itemprop="articleBody">
+    <p>This writeup will cover GCC’s stack alignment features and how they can interfere with testing a simple 32-bit buffer overflow. GCC implement’s stack alignment by using two LEA instructions, the second of which will change the value of your payload.</p>
+
+<p>As a workaround, you can either manipulate a byte to account for this offset. For simple tests, you can also just disable stack alignment.</p>
+
+<h1 id="background">Background</h1>
+
+<p>This writeup was inspired after watching <a href="https://www.youtube.com/watch?v=HSlhY4Uy8SA">this Live Overflow video</a>. It’s a great walkthrough for a basic shellcode methodology. However, the prebuilt binary doesn’t have GCC stack alignment enabled, as evident in the disassembly at 1:40.</p>
+
+<p>If you take the same C code at the 0:30 mark, and build it yourself in Debian, you won’t get the same results as-is. You’ll have to modify the payload or the build. We will use that code verbatim in this walkthrough and illustrate what changes in the assembly.</p>
+
+<h1 id="problem">Problem</h1>
+
+<p>Suppose you want to exploit a simple buffer overflow. Let’s start with some vulnerable code:</p>
+
+<div class="language-c highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="cp">#include &lt;stdio.h&gt;
+</span>
+<span class="kt">int</span> <span class="nf">main</span><span class="p">()</span> <span class="p">{</span>
+  <span class="kt">char</span> <span class="n">buffer</span><span class="p">[</span><span class="mi">4</span><span class="p">];</span>
+  <span class="n">gets</span><span class="p">(</span><span class="n">buffer</span><span class="p">);</span>
+<span class="p">}</span>
+</code></pre></div></div>
+
+<p>Save it in a file called <em>bof.c</em>.</p>
+
+<p>The <em>gets</em> function is well-known and insecure. In fact, the compiler will yell at you just for trying to use it.</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>$ gcc bof.c -o bof.out                                  
+bof.c: In function ‘main’:
+bof.c:5:3: warning: implicit declaration of function ‘gets’; did you mean ‘fgets’? [-Wimplicit-function-declaration]
+    5 |   gets(buf);
+      |   ^~~~
+      |   fgets
+/usr/bin/ld: /tmp/ccj0LXg4.o: in function `main':
+bof.c:(.text+0x15): warning: the `gets' function is dangerous and should not be used.
+</code></pre></div></div>
+
+<p>Its use here is simple: to overwrite the buffer, a behavior you should <em>never</em> allow outside of an intentionally vulnerable proof-of-concept.</p>
+
+<p>On x86_64 and ARM64, you can build and test the code pretty simply:</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>gcc bof.c -o bof.out -fno-stack-protector
+</code></pre></div></div>
+
+<p>Ignore the yelling about <em>gets</em>.</p>
+
+<p>We want to relax any stack protections in order to pull off the overflow. (Note: I’ve had mixed results with whether the <code class="language-plaintext highlighter-rouge">-fno-stack-protector</code> option will inhibit an overflow. I’m keeping it because it’s a well-known practice to enable it for this kind of exercise.)</p>
+
+<p>For the payload, we can keep it simple.</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>AAAABBBBCCCCDDDDEEEEFFFF
+</code></pre></div></div>
+
+<p>On a 64-bit system, we expect that eight of these letters, in pairs of four bytes, will appear in the stack.</p>
+
+<p>In GDB, you can run the attack:</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>$ gdb bof.out                              
+GNU gdb (Debian 13.2-1) 13.2
+...
+(gdb) r
+Starting program: /home/kali/bof.out 
+[Thread debugging using libthread_db enabled]
+Using host libthread_db library "/lib/x86_64-linux-gnu/libthread_db.so.1".
+AAAABBBBCCCCDDDDEEEEFFFF
+
+Program received signal SIGSEGV, Segmentation fault.
+0x4545454544444444 in ?? ()
+(gdb) i r rip
+rip            0x4545454544444444  0x4545454544444444
+</code></pre></div></div>
+
+<p>Based on the output, the application tried to execute <em>0x4545454544444444</em>. This is the little-endian representation of <em>DDDDEEEE</em>, a section from our simple payload. So, the overflow attack was successful.</p>
+
+<p>However, let’s try the same thing for a 32-bit build.</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>gcc bof.c -o bof.out -m32 -march=i386 -fno-stack-protector
+</code></pre></div></div>
+
+<p>(Note: You may need to install other dependencies to cross-compile. On Debian systems, you can install the  <code class="language-plaintext highlighter-rouge">gcc-multilib</code> package.)</p>
+
+<p>Open it in GDB and run the same commands.</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>$ gdb bof.out 
+GNU gdb (Debian 13.2-1) 13.2
+...
+(gdb) r
+Starting program: /home/kali/bof.out 
+[Thread debugging using libthread_db enabled]
+Using host libthread_db library "/lib/x86_64-linux-gnu/libthread_db.so.1".
+AAAABBBBCCCCDDDDEEEEFFFF
+
+Program received signal SIGSEGV, Segmentation fault.
+0x565561c8 in main ()
+(gdb) i r eip
+eip            0x565561c8          0x565561c8 &lt;main+59&gt;
+(gdb) i r esp
+esp            0x4242423e          0x4242423e
+</code></pre></div></div>
+
+<p>The application tried to access <em>0x4242423e</em>. Notice that this almost matches the <em>BBBB</em> input from our payload. However, one byte is off. Why?</p>
+
+<p>At this point, you could try different payloads, and you’ll notice the off-by-negative-four each time. This is part of how GCC implements stack alignment. The reason why this happens is evident in the disassembly.</p>
+
+<h1 id="gcc-stack-alignment">GCC Stack Alignment</h1>
+
+<p>Disassemble the application logic:</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>(gdb) disassemble main
+Dump of assembler code for function main:
+   0x5655618d &lt;+0&gt;:	lea    ecx,[esp+0x4]
+   0x56556191 &lt;+4&gt;:	and    esp,0xfffffff0
+   0x56556194 &lt;+7&gt;:	push   DWORD PTR [ecx-0x4]
+   0x56556197 &lt;+10&gt;:	push   ebp
+   0x56556198 &lt;+11&gt;:	mov    ebp,esp
+   0x5655619a &lt;+13&gt;:	push   ebx
+   0x5655619b &lt;+14&gt;:	push   ecx
+   0x5655619c &lt;+15&gt;:	sub    esp,0x10
+   0x5655619f &lt;+18&gt;:	call   0x565561c9 &lt;__x86.get_pc_thunk.ax&gt;
+   0x565561a4 &lt;+23&gt;:	add    eax,0x2e50
+   0x565561a9 &lt;+28&gt;:	sub    esp,0xc
+   0x565561ac &lt;+31&gt;:	lea    edx,[ebp-0xc]
+   0x565561af &lt;+34&gt;:	push   edx
+   0x565561b0 &lt;+35&gt;:	mov    ebx,eax
+   0x565561b2 &lt;+37&gt;:	call   0x56556040 &lt;gets@plt&gt;
+   0x565561b7 &lt;+42&gt;:	add    esp,0x10
+   0x565561ba &lt;+45&gt;:	mov    eax,0x0
+   0x565561bf &lt;+50&gt;:	lea    esp,[ebp-0x8]
+   0x565561c2 &lt;+53&gt;:	pop    ecx
+   0x565561c3 &lt;+54&gt;:	pop    ebx
+   0x565561c4 &lt;+55&gt;:	pop    ebp
+   0x565561c5 &lt;+56&gt;:	lea    esp,[ecx-0x4]
+   0x565561c8 &lt;+59&gt;:	ret
+End of assembler dump.
+</code></pre></div></div>
+
+<p>Observe the LEA instruction at <em>0x565561c5</em> (<em>main</em>+56):</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>lea    esp,[ecx-0x4]
+</code></pre></div></div>
+
+<p>In short, this instruction is saying that the value in <em>ECX</em> will be subtracted by 4, then set as the address of <em>ESP</em>. Let’s rerun and see what’s in <em>ECX</em> before and after that instruction:</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>(gdb) b *(main+56)
+Breakpoint 1 at 0x565561c5
+(gdb) r
+...
+Breakpoint 1, 0x565561c5 in main ()
+=&gt; 0x565561c5 &lt;main+56&gt;:	lea    esp,[ecx-0x4]
+(gdb) i r esp
+esp            0xffffd48c          0xffffd48c
+(gdb) i r ecx
+ecx            0x42424242          1111638594
+(gdb) ni
+0x565561c8 in main ()
+(gdb) x/1i $pc
+=&gt; 0x565561c8 &lt;main+59&gt;:	ret
+(gdb) i r esp
+esp            0x4242423e          0x4242423e
+(gdb) i r ecx
+ecx            0x42424242          1111638594
+</code></pre></div></div>
+
+<p>At <em>main</em>+56, if you try to access any memory at <em>ECX</em> or <em>ECX - 0x04</em>, you’ll get an error:</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>(gdb) x/8wx $ecx
+0x42424242:     Cannot access memory at address 0x42424242
+(gdb) x/8wx $ecx-0x4
+0x4242423e:     Cannot access memory at address 0x4242423e
+</code></pre></div></div>
+
+<p>So, <em>ESP</em> is set to <em>0x42424242 - 0x4</em>, or <em>0x4242423e</em>. All because of that LEA instruction. Go back a bit in the disassembly and observe a similar instruction at the beginning of <em>main</em>:</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>   0x5655618d &lt;+0&gt;:	lea    ecx,[esp+0x4]
+</code></pre></div></div>
+
+<p>What are the LEA instructions doing?</p>
+
+<p>This is actually a compiler optimization: enforcing a 16-byte stack boundary. There are valid, beneficial reasons why GCC adds this. You can read more about this elsewhere, but the gist is that, if GCC fails to account for this, an application may experience undefined behavior.</p>
+
+<p>Notice that, in the 64-bit build, these instructions do not appear at all. Rebuild the 64-bit version as we did earlier, then view the disassembly:</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>(gdb) disas main
+Dump of assembler code for function main:
+   0x0000000000001139 &lt;+0&gt;:   push   rbp
+   0x000000000000113a &lt;+1&gt;:   mov    rbp,rsp
+   0x000000000000113d &lt;+4&gt;:   sub    rsp,0x10
+   0x0000000000001141 &lt;+8&gt;:   lea    rax,[rbp-0x4]
+   0x0000000000001145 &lt;+12&gt;:  mov    rdi,rax
+   0x0000000000001148 &lt;+15&gt;:  mov    eax,0x0
+   0x000000000000114d &lt;+20&gt;:  call   0x1030 &lt;gets@plt&gt;
+   0x0000000000001152 &lt;+25&gt;:  mov    eax,0x0
+   0x0000000000001157 &lt;+30&gt;:  leave
+   0x0000000000001158 &lt;+31&gt;:  ret
+</code></pre></div></div>
+
+<p>However, for the purpose of testing a 32-bit binary, it also means that one byte of our overflow will be off by 4. This makes it harder to test well-documented vulnerable C examples and walkthroughs that target 32-bit systems. Further, if something like a CTF builds a 32-bit binary with this feature, it also means that you may need to compensate in your payload.</p>
+
+<p>Here are two fairly simple workarounds. They have not been <em>rigorously</em> tested, but they should do the job if you’re in a pinch.</p>
+
+<h1 id="workaround-1-basic-addition">Workaround 1: Basic Addition</h1>
+
+<p>With all other factors aside, a really simple compensating technique is just to add 4 to the value of whatever payload you intend to send, for the “last” (Little Endian) byte. So, if we wanted to overflow ESP wih <em>AAAA</em>, we could send:</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>BBBBEAAA
+</code></pre></div></div>
+
+<p>The first four bytes are just padding. The next four bytes will overflow and resolve to <em>AAAA</em>. Since <em>E = 0x45</em>, this will become to <em>0x41 = A</em> after the final LEA instruction in <em>main</em>.</p>
+
+<p>Check it in the debugger:</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>(gdb) disas main
+Dump of assembler code for function main:
+   ...
+   0x565561c5 &lt;+56&gt;:	lea    esp,[ecx-0x4]
+   0x565561c8 &lt;+59&gt;:	ret
+End of assembler dump.
+(gdb) r
+...
+BBBBEAAA
+Program received signal SIGSEGV, Segmentation fault.
+0x565561c8 in main ()
+(gdb) i r esp
+esp            0x41414141          0x41414141
+</code></pre></div></div>
+
+<p>Since <em>ESP = 0x41414141</em>, the intended payload is the overflow value.</p>
+
+<p>Although this is a trivial payload, the approach may be useful if you need to send, for example, shellcode or a target address. This approach is probably best for cases where you need to target a prebuilt binary and can observe these additional instructions. In other cases, you can also use GCC flags to fine-tune the stack alignment.</p>
+
+<h1 id="workaround-2-gcc-flags">Workaround 2: GCC flags</h1>
+
+<p>If you’re trying to follow an existing walkthrough that does not have these stack-aligning features enabled, and you just want to follow the walkthrough verbatim, you can also disable the features with <code class="language-plaintext highlighter-rouge">-mpreferred-stack-boundary=2</code>, like:</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>gcc bof.c -o bof.out -m32 -march=i386 -fno-stack-protector -mpreferred-stack-boundary=2
+</code></pre></div></div>
+
+<p>The resultant disassembly should no longer have the LEA instructions:</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>(gdb) disas main
+Dump of assembler code for function main:
+   0x0000118d &lt;+0&gt;:	push   ebp
+   0x0000118e &lt;+1&gt;:	mov    ebp,esp
+   0x00001190 &lt;+3&gt;:	push   ebx
+   0x00001191 &lt;+4&gt;:	sub    esp,0x4
+   0x00001194 &lt;+7&gt;:	call   0x11b6 &lt;__x86.get_pc_thunk.ax&gt;
+   0x00001199 &lt;+12&gt;:	add    eax,0x2e5b
+   0x0000119e &lt;+17&gt;:	lea    edx,[ebp-0x8]
+   0x000011a1 &lt;+20&gt;:	push   edx
+   0x000011a2 &lt;+21&gt;:	mov    ebx,eax
+   0x000011a4 &lt;+23&gt;:	call   0x1040 &lt;gets@plt&gt;
+   0x000011a9 &lt;+28&gt;:	add    esp,0x4
+   0x000011ac &lt;+31&gt;:	mov    eax,0x0
+   0x000011b1 &lt;+36&gt;:	mov    ebx,DWORD PTR [ebp-0x4]
+   0x000011b4 &lt;+39&gt;:	leave
+   0x000011b5 &lt;+40&gt;:	ret
+</code></pre></div></div>
+
+<p>Test it with GDB:</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>(gdb) r
+The program being debugged has been started already.
+Start it from the beginning? (y or n) y
+Starting program: /home/kali/bof.out 
+[Thread debugging using libthread_db enabled]
+Using host libthread_db library "/lib/x86_64-linux-gnu/libthread_db.so.1".
+AAAABBBBCCCCDDDDEEEEFFFF
+
+Program received signal SIGSEGV, Segmentation fault.
+0x44444444 in ?? ()
+</code></pre></div></div>
+
+<p>So, we were able to deliver the payload as-is, without accounting for any four-byte offset.</p>
+
+<p>This is probably best for cases where the vulnerable code is fairly “simple” (few custom function calls) and where you’re following someone else’s walkthrough. Should you encounter undefined behavior due to the stack alignment, you will need to put in some elbow grease: either offsetting your payloads by 4, or fine-tuning the stack-alignment flags after some research.</p>
+
+  </div><a class="u-url" href="/2023/09/19/buffer-overflow-stack-alignment.html" hidden></a>
+</article>
+
+      </div>
+    </main><footer class="site-footer h-card">
+  <data class="u-url" href="/"></data>
+
+  <div class="wrapper">
+
+    <h2 class="footer-heading">halcyondream</h2>
+
+    <div class="footer-col-wrapper">
+      <div class="footer-col footer-col-1">
+        <ul class="contact-list">
+          <li class="p-name">halcyondream</li></ul>
+      </div>
+
+      <div class="footer-col footer-col-2"><ul class="social-media-list"><li><a href="https://github.com/halcyondream"><svg class="svg-icon"><use xlink:href="/assets/minima-social-icons.svg#github"></use></svg> <span class="username">halcyondream</span></a></li></ul>
+</div>
+
+      <div class="footer-col footer-col-3">
+        <p>Portfolio for Cybersecurity projects, research, and developments.</p>
+      </div>
+    </div>
+
+  </div>
+
+</footer>
+</body>
+
+</html>

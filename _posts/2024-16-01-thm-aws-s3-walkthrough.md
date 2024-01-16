@@ -1,7 +1,7 @@
 ---
 layout: post
 title: TryHackMe AWS S3 Walkthrough
-date: 2024-16-01
+date: 2024-01-16
 ---
 
 This guide will walk you through the AWS S3 labs' campaign. The intention is to lay out the attack steps as a methodology with a more natural flow than the labs, which fragment the process as it is broken into different sections.

