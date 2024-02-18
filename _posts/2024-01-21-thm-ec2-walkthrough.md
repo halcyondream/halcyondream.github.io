@@ -298,7 +298,9 @@ In addition, go ahead and start the listener in the AttackBox shell:
 
 Now, we need to upload the contents to one of the instances. From trial-and-error, I can confirm that a rever shell connection will fail if coming from the *SecretDataInstance*. There's lots of reasons why reverse shells might fail&mdash;for example, firewall rules or EDR software&mdash;but you should never make assumptions. If this had worked, we would have circumvented the Application instance altogether.
 
-Instead, we can defer to the attack workflow provided in the lab briefing: installing *nc* on the *SecretDataIInstance* and pivoting there from the *ApplicationInstance*. You will need to stop the instance, update the *userData* attribute, and start the instance again, using the *ApplicationInstance* ID. 
+Instead, we can defer to the attack workflow provided in the lab briefing: setting up the reverse shell to the *ApplicationInstance*, then using a password-based *ssh* to the *SecretDataInstance*. 
+
+First, revert the original *userData* on the secret instance. Then, stop the *ApplicationInstance*, update the *userData* attribute with the same ASCII-encoded reverse shell payload, and start the instance again, using the *ApplicationInstance* ID. 
 
 ```
 ~$ aws ec2 start-instances \
@@ -342,4 +344,4 @@ Where:
 
 Once it prompts you for the password, use the password exfiltrated from the *userData*. At this point, you can run some familiar Linux commands to dump the contents of the secret.
 
-As a final note, the *nc* package is preinstalled on the Secret instance. You can use it to try and manually initiate a reverse shell outside of the NAT. I didn't have much success there, but it may be worth exploring further if you have the time.
+As a final note, the *nc* package is preinstalled on the Secret instance. You can use it to try and manually initiate a reverse shell outside of the NAT and try to get a connection from a public workstation or the THM AttackBox. I didn't have much success there, but it may be worth exploring further if you have the time.
