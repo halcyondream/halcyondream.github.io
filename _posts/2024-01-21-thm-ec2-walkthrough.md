@@ -300,7 +300,7 @@ In addition, go ahead and start the listener in the AttackBox shell:
 
 Now, we need to upload the contents to one of the instances. From trial-and-error, I can confirm that a rever shell connection will fail if coming from the *SecretDataInstance*. There's lots of reasons why reverse shells might fail&mdash;for example, firewall rules or EDR software&mdash;but you should never make assumptions. If this had worked, we would have circumvented the Application instance altogether.
 
-Instead, we can defer to the attack workflow provided in the lab briefing: setting up the reverse shell to the *ApplicationInstance*, then using a password-based *ssh* to the *SecretDataInstance*. 
+Instead, we can defer to the attack workflow provided in the lab briefing: setting up the reverse shell from the *ApplicationInstance*, and from there, using a password-based *ssh* to the *SecretDataInstance*. 
 
 First, revert the original *userData* on the secret instance. Ensure that the AttackBox is running the Netcat listener. Then, stop the *ApplicationInstance*, update the *userData* attribute with the same ASCII-encoded reverse shell payload, and start the instance again, using the *ApplicationInstance* ID. 
 
