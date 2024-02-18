@@ -204,7 +204,7 @@ The instance [User Data](https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/use
 
 First, let's see what each one is currently doing by retrieving the user data itself. The THM guide proposes a series of Bash commands which, during an engagement, you're more likely to use. The following Python code, which leverages the [*boto3* library](https://boto3.amazonaws.com/v1/documentation/api/latest/reference/services/ec2.html) does the same thing:
 
-```python3
+```python
 import boto3
 import botocore.config
 import base64
