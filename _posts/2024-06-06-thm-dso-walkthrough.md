@@ -274,9 +274,11 @@ Remove the `.git` suffix from that URL and open it in your browser. The entire p
 
 This is not a "normal" find for a CTF. However, this is a *DevSecOps learning path*; likely, the author of this challenge wants you to understand the importance of hardening your entire CI/CD, including *access to the entire repository*, *especially* when that repository contains hardcoded secrets (flags).
 
+*Note: The user `melmols`, who maintains this repository, also appears in /home/ubuntu/.ssh/authorized_hosts. Based on previous challenges in this learning path, it is possible that they used SSH to deploy the application to this instance.*
+
 You are welcome, and perhaps encouraged, to inspect this repository inside and out, as it may will certainly help you complete the CTF more quickly. However, I feel like this is taking the easy way out, so I will continue with testing the system as a black-grey box.
 
-Anyway, let's pretend that the devs have secured the project repository, but deployed the `.git` folder. This is not a good practice. To demonstrate why, let's talk about the `index` file.
+Anyway, let's pretend that the devs have secured the project repository, but deployed the `.git` folder. This is not a good practice. To demonstrate why, lest's talk about the `index` file.
 
 From the [Git docs](https://git-scm.com/docs/index-format), you can learn all about the structure of this binary file. Of importance, let's review the Index Entries:
 
