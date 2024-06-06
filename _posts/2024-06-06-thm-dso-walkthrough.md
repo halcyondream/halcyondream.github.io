@@ -6,13 +6,13 @@ date: 2024-02-18
 
 # Overview of "Mother's Secrets"
 
-This write-up was a black-box web application pentest. It is an unguided challenge and therefore resembles a "real" CTF. This writeup covers my own methodology, not just for finding the flags, but for testing the system as though this were a real engagement. 
+"Mother's secrets" is a web pentest challenge. It is an unguided challenge and therefore resembles a "real" CTF. This writeup covers my own methodology, not just for finding the flags, but for testing the system as though this were a real-world engagement. 
 
-Much of the real content is redacted or not included, as that would take the fun out of doing the challenge yourself. You are encouraged to use this as a guide to develop your approach, not as a cheat-sheet for the answers. (Incidentally, as you will see later, you can find all of the referenced file content online, available to the public, even without a THM subscription.)
+Much of the real content is redacted or not included, as that would take the fun out of doing the challenge yourself. You are encouraged to use this as a guide to develop your own approach, not as a cheat-sheet for the answers. (Incidentally, as you will see later, you can find all of the referenced file content online, available to the public, even without a THM subscription.)
 
-Also, shoutout to the *Alien* theme and references throughout this challenge.
+Also, shoutout to the *Alien* theme and references.
 
-Without even reading the challenge description, keep in mind that this is a *DevSecOps* challenge. As you build a threat model of this application, keep in mind the attack surface:
+Without even reading the challenge description, keep in mind that this is a *DevSecOps* exercise. As you build a threat model of this application, keep in mind the attack surface:
 
 - Secrets management (or lack thereof)
 - Source-code management 
@@ -26,7 +26,7 @@ Right off the bat, the last two will stand out in the "task files," which repres
 
 # Methodology
 
-First, download the "task files," which contain source code for the application. This is a single flat file which contains code for two routes: `yaml.js` and `nostromo.js`.
+First, download the "task files." This is a single, flat file which contains code for two routes: `yaml.js` and `nostromo.js`.
 
 First, inspect `yaml.js`:
 - The *isYaml* arrow function only performs validation on the suffix of a given filename (ends with `.yaml`). In the real world, this would not be considered a "robust" solution for file validation. However, we will see later that this is a non-issue for our goals as an attacker.
@@ -36,8 +36,8 @@ First, inspect `yaml.js`:
 - Finally, there is an interesting import of `../websocket.js`. The business logic here seems trivial, but the import itself is of interest.
 
 Now, inspect `nostromo.js`:
-- The POST-based `/nostromo` route is nearly identical in behavior to the `/yaml` route seen earlier. There are two major differences, however: no filename validation, and logic that sets the global `isNostromoAuthenticate` variable to *true*. In short, if you give this route the path to *any* filename that exists, it will return the contents of that file unconditionally.
-- Likewise `/nostromo/mother` POST route is nearly identical to the `/nostromo` route, but with two major differences. The first is that, in order to return the contents, two global variables must be *true*: `isNostromoAuthenticate` and `isYamlAuthenticate`. (The task file `yaml.js` does not include logic for `isYamlAuthenticate`, so it's possible that some or all of the source code is outdated.) The second major difference is that it reads files from a path called *mother/*, which is important to note as we build an understanding of the underlying structure.
+- The POST-based `/nostromo` route is nearly identical in behavior to the `/yaml` route seen earlier; this includes the path-traversal vulnerability. There are two major differences, however: no filename validation, and logic that sets the global `isNostromoAuthenticate` variable to *true*. In short, if you give this route the path to *any* filename that exists, it will return the contents of that file unconditionally.
+- Likewise `/nostromo/mother` POST route is nearly identical to the `/nostromo` route, but with two major differences. The first is that, in order to return the contents, two global variables must be *true*: *isNostromoAuthenticate* and *isYamlAuthenticate*. (The task file `yaml.js` does not include logic for *isYamlAuthenticate*, so it's possible that some or all of the source code is outdated.) The second major difference is that it reads files from a path called *mother/*, which is important to note as we build an understanding of the underlying structure.
 - This imports `./yaml.js` from the same directory. In the application, we could expect both files to exist in the same place, although it is not yet clear what the folder is named.
 - This also imports code from `../websocket.js`. Note that, in both routes' code, this exists one directory up.
 - Finally, the commented-out import statement implies a folder at `../../mothers_secret_challenge`, which contains a file called `../websocket.js`. If you follow the relative paths, you'll notice that this could be the name of the project folder, as the location of `websocket.js` matches with this path.
@@ -193,7 +193,7 @@ mothers_secret_challenge/
 - websocket.js
 - views/
 	- index.html
-	- index.min.js
+	- index.min.js?
 - public/
 	- ?
 - mother/
@@ -347,8 +347,9 @@ Indeed, this matches the same "control code" given in the CTF description.
 Now, let's try to enumerate `.txt` files:
 
 ```
-strings index.bin | grep '.yaml'
+strings index.bin | grep '.txt'
 ...
+mother/0rd3r937.txt
 mother/secret.txt
 ...
 public/0rd3rXXX.txt
@@ -357,8 +358,9 @@ public/0rd3rXXX.txt
 
 Using this enumeration, we have revealed the contents of the following interesting files:
 
-- *public/100375.yaml*, which contains a reference to 0rd3rXXX.txt, and implies that the order number is XXX (redacted)
+- *public/100375.yaml*, which contains a reference to *0rd3rXXX.txt*, and implies that the order number is XXX (redacted)
 - *public/0rd3rXXX.txt*, which contains the "Nostromo route" flag
+- *mother/0rd3rXXX.txt*, which reveals the order number
 - *mother/secret.txt*, which contains a reference to */opt/m0th3r*, the location of the "Mother's secret" flag
 
 By this point, we have four of the six flags, and have all but exhausted the server-side attack paths given the path-traversal vulnerability. For the final two, let's inspect the client. As noted, the core frontend logic exists in *index.min.js*.
