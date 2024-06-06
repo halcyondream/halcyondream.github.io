@@ -4,9 +4,13 @@ title: TryHackMe DevSecOps CTF walkthrough
 date: 2024-02-18
 ---
 
-# Overview
+# Overview of "Mother's Secrets"
 
-This write-up was a black-box web application pentest. It is an unguided challenge and therefore resembles a "real" CTF. This writeup covers my own methodology, not just for finding the flags, but for testing the system as though this were a real engagement. Much of the real content is redacted or not included, as that would take the fun out of doing the challenge yourself.
+This write-up was a black-box web application pentest. It is an unguided challenge and therefore resembles a "real" CTF. This writeup covers my own methodology, not just for finding the flags, but for testing the system as though this were a real engagement. 
+
+Much of the real content is redacted or not included, as that would take the fun out of doing the challenge yourself. You are encouraged to use this as a guide to develop your approach, not as a cheat-sheet for the answers. (Incidentally, as you will see later, you can find all of the referenced file content online, available to the public, even without a THM subscription.)
+
+Also, shoutout to the *Alien* theme and references throughout this challenge.
 
 Without even reading the challenge description, keep in mind that this is a *DevSecOps* challenge. As you build a threat model of this application, keep in mind the attack surface:
 
@@ -67,7 +71,7 @@ With this in mind, let's visit the site at `http://IP_ADDRESS`. The home page is
 
 Aside from that, the frontend functionality is pretty limited. You can use the UP and DOWN arrows on your keyboard to navigate to different text panels. At this stage, the content does not reveal much, so we can save this for later.
 
-Let's try to understand the API. The frontend does not reveal anything about where the routes exist, so you will need to test the route names with some common API patterns. In this case, here are the locations:
+Let's try to understand the API. The frontend does not reveal anything about where the routes exist, so you will need to test the route names with some [common API naming conventions](https://gist.github.com/yassineaboukir/8e12adefbd505ef704674ad6ad48743d). In this case, here are the locations:
 - `http://IP_ADDRESS/yaml`
 - `http://IP_ADDRESS/api/nostromo`
 - `http://IP_ADDRESS/api/nostromo/mother`
@@ -233,7 +237,7 @@ Content-Type: application/json
 ...
 
 {
-  "file_path": "../server.json"
+  "file_path": "../.git/config"
 }
 ```
 
@@ -274,7 +278,7 @@ You are welcome, and perhaps encouraged, to inspect this repository inside and o
 
 Anyway, let's pretend that the devs have secured the project repository, but deployed the `.git` folder. This is not a good practice. To demonstrate why, let's talk about the `index` file.
 
-From the [Git docs], you can learn all about the structure of this binary file. Of importance, let's review the Index Entries:
+From the [Git docs](https://git-scm.com/docs/index-format), you can learn all about the structure of this binary file. Of importance, let's review the Index Entries:
 
 > An index entry typically represents a file.
 
