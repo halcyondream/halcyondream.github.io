@@ -8,7 +8,7 @@ date: 2024-02-18
 
 "Mother's secrets" is a web pentest challenge. It is an unguided challenge and therefore resembles a "real" CTF. This writeup covers my own methodology, not just for finding the flags, but for testing the system as though this were a real-world engagement. 
 
-Much of the real content is redacted or not included, as that would take the fun out of doing the challenge yourself. You are encouraged to use this as a guide to develop your own approach, not as a cheat-sheet for the answers. (Incidentally, as you will see later, you can find all of the referenced file content online, available to the public, even without a THM subscription.)
+Much of the content is redacted or not included, as that would take the fun out of doing the challenge yourself. You are encouraged to use this as a guide to develop your own approach, not as a cheat-sheet for the answers. (Incidentally, as you will see later, you can find all of the referenced file content online, available to the public, even without a THM subscription.)
 
 Also, shoutout to the *Alien* theme and references.
 
@@ -36,7 +36,7 @@ First, inspect `yaml.js`:
 - Finally, there is an interesting import of `../websocket.js`. The business logic here seems trivial, but the import itself is of interest.
 
 Now, inspect `nostromo.js`:
-- The POST-based `/nostromo` route is nearly identical in behavior to the `/yaml` route seen earlier; this includes the path-traversal vulnerability. There are two major differences, however: no filename validation, and logic that sets the global `isNostromoAuthenticate` variable to *true*. In short, if you give this route the path to *any* filename that exists, it will return the contents of that file unconditionally.
+- The POST-based `/nostromo` route is nearly identical in behavior to the `/yaml` route seen earlier; this includes the path-traversal vulnerability. There are two major differences, however: no filename validation, and logic that sets the global `isNostromoAuthenticate` variable to *true*. In short, if you give this route the path to *any* file that exists, it will return the contents of that file unconditionally.
 - Likewise `/nostromo/mother` POST route is nearly identical to the `/nostromo` route, but with two major differences. The first is that, in order to return the contents, two global variables must be *true*: *isNostromoAuthenticate* and *isYamlAuthenticate*. (The task file `yaml.js` does not include logic for *isYamlAuthenticate*, so it's possible that some or all of the source code is outdated.) The second major difference is that it reads files from a path called *mother/*, which is important to note as we build an understanding of the underlying structure.
 - This imports `./yaml.js` from the same directory. In the application, we could expect both files to exist in the same place, although it is not yet clear what the folder is named.
 - This also imports code from `../websocket.js`. Note that, in both routes' code, this exists one directory up.
@@ -49,7 +49,7 @@ Based on static analysis, we can infer the following:
 - The `/yaml` route can be exploited only if we know the location of a YAML file on the system.
 - The `/nostromo/mother` route can be exploited only after `/yaml` and `/nostromo` are successfully executed.
 
-We also have a rough outline of the project structure:
+We also have a rough idea of the project structure:
 
 ```
 mothers_secret_challenge/
