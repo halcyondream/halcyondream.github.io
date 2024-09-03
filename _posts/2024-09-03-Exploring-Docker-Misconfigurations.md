@@ -1,7 +1,7 @@
 ---
 layout: post
 title: Exploring Docker Misconfigurations
-date: 2024-02-18
+date: 2024-09-03
 ---
 
 This walkthrough will cover the "Docker Practical" from TryHackMe's Container Security path. The environment is an insecure, goat-like deployment, meant for excessive hacking. You are unlikely to find something like this in the wild; but, in the rare case that you do, be aware of the attack vectors laid out here.
