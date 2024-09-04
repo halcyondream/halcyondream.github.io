@@ -290,7 +290,7 @@ This does, in fact, resemble the "orchestrator" architecture noted earlier. In t
 
 Realistically, the goal here is orchestration. However, the design leaves room for excessive abuse of the entire system. To recap the steps taken, consider the general attack flow we took, which looked something like this:
 
-![](/assets/2024-09-04/Documents/docker-attack-flow.png)
+![](/assets/2024-09-04/docker-attack-flow.png)
 
 Note that most of the exploitation was made easy because of the exposed TCP daemon, which provided unrestricted control over the Docker and host systems alike.
 
