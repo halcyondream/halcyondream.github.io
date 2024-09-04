@@ -265,7 +265,13 @@ UBUNTU_CODENAME=focal
 
 Indeed, this is an instance of Ubuntu 20.04. Why is this important to know? 
 
-One big reason is because Ubuntu 20.04 uses the "hybrid" implementation of cgroups v1 and v2. This effectively means that your containers will "borrow" this hybrid behavior. Modern Linux distributions have moved entirely to cgroups v2, which retired the `release_agent` and `notify_on_release` behaviors. Since this OS uses them, however, we can successfully run the *cgroups* exploit via the privileged container:
+One big reason is because Ubuntu 20.04 uses the "hybrid" implementation of cgroups v1 and v2. Cgroups v1 introduces the `release_agent` and `notify_on_release` behaviors (defined in [Section 1.4 of the official group documentation](https://www.kernel.org/doc/Documentation/cgroup-v1/cgroups.txt)).
+
+Although this was intended to allow custom "cleanup" behaviors for cgroups, an attacker could leverage a custom release agent to achieve persistent remote-code execution. Understandably, modern Linux distributions have moved entirely to [cgroups v2, which retired the `release_agent` and `notify_on_release` behaviors](https://man7.org/conf/lca2019/cgroups_v2-LCA2019-Kerrisk.pdf).
+
+Docker uses control groups as one of its main "Linux primitives," so a host running cgroups v1 will enable containers to use release agents. If the container is unprivileged, it can use release agents within the container's namespace only. However, if the container is privileged, an attacker can achieve [remote code execution on the host itself](https://blog.trailofbits.com/2019/07/19/understanding-docker-container-escapes).
+
+Since this OS uses cgroups v1, it will enable the custom release agent behaviors. We can successfully run the cgroups exploit via the privileged container:
 
 ```bash
 mkdir /tmp/cgrp && mount -t cgroup -o rdma cgroup /tmp/cgrp && mkdir /tmp/cgrp/x
@@ -278,7 +284,7 @@ chmod a+x /exploit
 sh -c "echo \$\$ > /tmp/cgrp/x/cgroup.procs"
 ```
 
-This is a blind attack, which means we won't get any explicit feedback. If successful it would execute the script at `/exploit`. In this case, it will 
+This is a blind attack, which means we won't get any explicit feedback. If successful it would execute the script at `/exploit`. In this case, it will copy the contents of a file (`flag.txt`) from a user's home folder on the host system to a target location in the container. 
 
 If you were trying to recreate this lab in your own VM, you would likely want an environment that supported this hybrid, so you could achieve the release-agent exploit. Of course, newer Linux distros have moved away from v1 entirely, and therefore no longer support cgroups release agents. If this were Ubuntu 21.10 or higher, that exploit would fail.
 
