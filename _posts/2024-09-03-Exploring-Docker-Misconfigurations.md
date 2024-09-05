@@ -12,7 +12,11 @@ One way we can appreciate such a box is by remembering that Kubernetes has been 
 
 # Building the lab yourself
 
-In exploring security misconfigurations, you naturally need to understand where such configuration definitions live, and how to set them up, before you can effectively abuse them. This walkthrough will explore the configs and their locations. You are encouraged to spin up a virtual machine of your own in order to test these configurations yourself.
+In exploring security misconfigurations, you naturally need to understand where such configuration definitions live, and how to set them up, before you can effectively abuse them. This walkthrough will explore the configs and their locations. 
+
+You can find a [near-identical build spec of this underlying system here](https://github.com/halcyondream/exploring-docker-security). This includes the necessary configurations, along with a Vagrantfile that you can use to spin up the environment on your local system. Some tweaks were made, and were very deliberate; but, since both systems share the same underlying root causes, it is not difficult to exploit.
+
+Either way, try to approach the environment as a "black box," performing the typical stages of discovery, reconnaissance, etc. before reviewing the source code. Afterwards, try to figure out what else the environment is doing; these additional findings may prove invaluable in a real-world assessment. Finally, use this to make specific recommendations for the entire SDLC, and try to redeploy a "safe" version of this infrastructure. 
 
 # Exploring the environment
 
@@ -67,17 +71,7 @@ Indeed, *unbounded administrative access* is [one such consequence of exposing D
 >
 > Remote access without TLS is **not recommended**
 
-The bit about "gaining root access to the host" is a consequence of mounting the host's filesystem on a highly-privileged container. For example, consider the following command:
-
-```
-docker -H 10.10.20.228:2375 run -v /:/mnt --rm -it alpine chroot /mnt sh
-```
-
-This will allow a remote attacker to:
-- Mount the *host's* root directory onto the container's `/mnt` folder
-- Enter a *chroot* environment on the host's root directory
-
-From there, the remote attacker has effectively "escaped" the container and can perform arbitrary actions on the host system.
+The bit about "gaining root access to the host" is a consequence of abundant privileges given to the Docker daemon. For example, one could mount the host's root filesystem to a container and *chroot* into it; or, for a privileged container, could use *nsenter* to enter the init Namespace, which effectively gives the user root access. Both exploits are provided later, but you should consider that a setup like this may be plagued with privilege escalation vectors.
 
 For now, let's roll with the speculation that this host is part of a container orchestration process. Perhaps its configuration predates a more robust solution, like Kubernetes. 
 
@@ -137,8 +131,6 @@ You can start to see the original Dockerfile from this output:
 - Notice that each line after `/bin/sh -c #(nop)` represents a Dockerfile directive. 
 - Any shell command (without an explicit directive) preceded by `/bin/sh -c` represents a RUN directive. 
 - Finally, the last few lines match with the official Ubuntu 18.04 image on the Docker registry, so we can infer that it represents `FROM ubuntu:18.04`.
-
-All things taken together, the workflow for this environment is something like this:
 
 Using all of this output, we can reconstruct the image:
 
@@ -284,7 +276,9 @@ chmod a+x /exploit
 sh -c "echo \$\$ > /tmp/cgrp/x/cgroup.procs"
 ```
 
-This is a blind attack, which means we won't get any explicit feedback. If successful it would execute the script at `/exploit`. In this case, it will copy the contents of a file (`flag.txt`) from a user's home folder on the host system to a target location in the container. 
+This is a blind attack, which means we won't get any explicit feedback. If successful it would execute the script at `/exploit`. In this case, it will copy the contents of a file (`flag.txt`) from a user's home folder on the host system to a target location in the container.
+
+However, the biggest flaw in the release agent model is that an attacker can author it to perform arbitrary commands. Instead of exfiltration, this could remove or encrypt (ransomware) sensitive files on the host. It could also be used to transfer files to the host, such as the attacker's SSH keys.
 
 If you were trying to recreate this lab in your own VM, you would likely want an environment that supported this hybrid, so you could achieve the release-agent exploit. Of course, newer Linux distros have moved away from v1 entirely, and therefore no longer support cgroups release agents. If this were Ubuntu 21.10 or higher, that exploit would fail.
 
@@ -317,12 +311,15 @@ In our exploration of the system, we leveraged the exposed TCP daemon as well as
 
 In general, acknowledge the following:
 - Disable cgroup v1 on systems that run Docker
-- Where possible, [run Docker as a non-root user](https://docs.docker.com/engine/security/rootless/)
+- Wherever possible, [run Docker in "rootless mode"](https://docs.docker.com/engine/security/rootless/)
+- If rootless mode is absolutely impossible for some reason, manage Docker by adding an unprivileged user, whose sole responsibility is to manage docker, to the `docker` group
 - By default, use the most restrictive container permissions
 - Assign only the permissions that are absolutely needed
 - Avoid privileged containers
 - Prefer application APIs, which implements effective authentication and authorization, over directly exposing the Docker daemon
-- If the Docker daemon must be expose, restrict access with key-based SSH or with TLS keys
+- If the Docker daemon must be exposed, restrict access with key-based SSH or with TLS keys
 - Prefer a more robust container orchestration solution, such as Kubernetes, over a home-rolled solution
+
+Many of these recommendations are aligned with [OWASP guidance on container security](https://cheatsheetseries.owasp.org/cheatsheets/Docker_Security_Cheat_Sheet.html). 
 
 Note that we got RCE pretty quickly, and explored a few ways to do so. During an engagement, you should look for these attack vectors: on the host system, Docker configuration, and container application. This can help you make a case to upgrade or move away from a weak solution, and look towards one that is resilient in the face of classic attacks.
