@@ -314,6 +314,14 @@ The TryHackMe room notes four vulnerabilities:
 
 In our exploration of the system, we leveraged the exposed TCP daemon as well as ways to break out of the container (by *chroot*-ing into a container on the host filesystem, or by using *nsenter* from the privileged container). The cgroup exploit is an interesting blind attack, and you could certainly pull it off on an older system. However, as more production environments migrate and upgrade, this attack will become less applicable in time.
 
+Let's revisit the "Important Context" from the TryHackMe site:
+
+> This room focuses on exploiting the Docker daemon itself, which often, relies on having elevated permissions within the container... this room assumes that you have already managed to become root in the container.
+
+In retrospect, this "context" is interesting. One one hand, it's easy to appreciate the assertion here, as the privileged container was one valid attack path. However, the bigger concern was, as noted, the daemon exposed over the TCP socket. This allowed us to tamper with the privileged container, to spawn new containers, and so forth.
+
+Perhaps, the authors had originally intended for Docker *not* to be exposed via its TCP socket. In that case, the privileged container is absolutely the bigger attack vector. If it were a pipeline manager, something in the spirit of Jenkins, then an attack against its web interface, a pipeline definition, or another service would be likely targets to break in.
+
 Most of the tactics used here are also laid out in this [HackTricks cheat sheet](https://book.hacktricks.xyz/linux-hardening/privilege-escalation/docker-security/docker-breakout-privilege-escalation). The difference is that, with an eye towards DevSecOps, we want to understand what the environment is and what it is supposed to do. That way, you can provide and plan  meaningful remediations that are relevant with respect to the system's purpose.
 
 # Recommendations
@@ -331,4 +339,9 @@ In general, acknowledge the following:
 
 Many of these recommendations are aligned with [OWASP guidance on container security](https://cheatsheetseries.owasp.org/cheatsheets/Docker_Security_Cheat_Sheet.html). 
 
-Note that we got RCE pretty quickly, and explored a few ways to do so. During an engagement, you should look for these attack vectors: on the host system, Docker configuration, and container application. This can help you make a case to upgrade or move away from a weak solution, and look towards one that is resilient in the face of classic attacks.
+Without those two protections, we abused the daemon and got RCE pretty quickly, and then explored a few ways to do so. During an engagement, you should look for these attack vectors: on the host system, Docker configuration, and container application. This can help you make a case to upgrade or move away from a weak solution, and look towards one that is resilient in the face of classic attacks.
+
+The intended purpose of this system is still a bit of a mystery. The daemon over TCP, coupled with the privileged container, seems redundant, and sends an unclear message about its use cases. Each case could, on its own, serve the needs of container orchestration or CI/CD pipelines, albeit with its own caveats and security considerations; TCP via key-based TLS or SSH may be the better route.
+
+Or, they could use something else. *Anything* else.
+
