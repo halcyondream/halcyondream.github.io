@@ -4,7 +4,7 @@ title: Exploring Docker Misconfigurations
 date: 2024-09-03
 ---
 
-This walkthrough will cover the "Docker Practical" from TryHackMe's Container Security path. The environment is an insecure, goat-like deployment, meant for excessive hacking. You are unlikely to find something like this in the wild; but, in the rare case that you do, be aware of the attack vectors laid out here.
+This walkthrough will cover the "Docker Practical" from TryHackMe's Container Security path. The environment is an insecure, goat-like deployment, meant for excessive hacking. You are unlikely to find something like this in the wild; but, in the rare case that you do, be aware of the attack vectors laid out here. 
 
 In the real world, you might see these vulnerabilities in piecemeal, but likely not all together at once. The root causes lay in the configuration: weak or nonexistent permissions; insecure exposure of the docker API; and an underlying system that still supports Cgroup v1. Taken together, you can start to appreciate how you might approach an environment that uses any (hopefully not *all*) of these insecure configurations.
 
@@ -111,7 +111,9 @@ With that in mind, why would someone want to relax these settings? In the contex
 - The [Docker Pipeline plugin](https://www.jenkins.io/doc/book/pipeline/docker/#using-a-remote-docker-server) will communicate with the local daemon via `/var/run/docker.sock`. Likewise, the [Docker slaves plugin](https://plugins.jenkins.io/docker-slaves/) has notes about bind mounting `docker.sock` in a build container.
 - Although Jenkins takes no official stance on AppArmor, a developer or maintainer may choose to disable it in the event that AppArmor is conflicting with the container's needs.
 
-At this time, we do not have enough information to determine if "CI/CD" tasks is or was an intended goal of the administrator. Let's inspect this highly-privileged container for more insight.
+If this highly-privileged container has jurisdiction over the CI/CD process, then controlling it would give you a foothold to manipulate the build and deployment processes of applications or services. This is hugely problematic and a big find, if applicable. 
+
+For now, though, we lack a perfect understanding of that container's purpose. Let's keep inspecting it.
 
 Use `docker history` to view information about each layer:
 
@@ -217,7 +219,14 @@ We could also break out by launching a container, which targets host's root file
 docker -H 10.10.20.228:2375 run -v /:/mnt --rm -it alpine chroot /mnt sh
 ```
 
-Either way, we have access to the host as the root user.
+The exposed TCP port also allows us to spawn a temporary container that immediately enters the namespace of PID 1. Note that, in this approach, we also have to 
+
+```
+docker -H 10.10.20.228:2375 run --rm -it --pid=host --privileged alpine \
+  nsenter --target 1 --mount --uts --ipc --net /bin/bash
+```
+
+Regardless of the method, we have access to the host as the root user.
 
 Using `cat`, we can prove that the host admin has configured the Docker daemon to listen over the network.
 
@@ -257,13 +266,13 @@ UBUNTU_CODENAME=focal
 
 Indeed, this is an instance of Ubuntu 20.04. Why is this important to know? 
 
-One big reason is because Ubuntu 20.04 uses the "hybrid" implementation of cgroups v1 and v2. Cgroups v1 introduces the `release_agent` and `notify_on_release` behaviors (defined in [Section 1.4 of the official group documentation](https://www.kernel.org/doc/Documentation/cgroup-v1/cgroups.txt)).
+One big reason is because Ubuntu 20.04 uses the "hybrid" implementation of cgroups v1 and v2. Cgroups v1 introduces the `release_agent` and `notify_on_release` behaviors (defined in [Section 1.4 of the official cgroups v1 documentation](https://www.kernel.org/doc/Documentation/cgroup-v1/cgroups.txt)).
 
 Although this was intended to allow custom "cleanup" behaviors for cgroups, an attacker could leverage a custom release agent to achieve persistent remote-code execution. Understandably, modern Linux distributions have moved entirely to [cgroups v2, which retired the `release_agent` and `notify_on_release` behaviors](https://man7.org/conf/lca2019/cgroups_v2-LCA2019-Kerrisk.pdf).
 
 Docker uses control groups as one of its main "Linux primitives," so a host running cgroups v1 will enable containers to use release agents. If the container is unprivileged, it can use release agents within the container's namespace only. However, if the container is privileged, an attacker can achieve [remote code execution on the host itself](https://blog.trailofbits.com/2019/07/19/understanding-docker-container-escapes).
 
-Since this OS uses cgroups v1, it will enable the custom release agent behaviors. We can successfully run the cgroups exploit via the privileged container:
+Since this OS uses cgroups v1 in its hybrid model, it will enable these custom release agent behaviors. We can successfully run the cgroups exploit via the privileged container:
 
 ```bash
 mkdir /tmp/cgrp && mount -t cgroup -o rdma cgroup /tmp/cgrp && mkdir /tmp/cgrp/x
@@ -305,9 +314,9 @@ The TryHackMe room notes four vulnerabilities:
 
 In our exploration of the system, we leveraged the exposed TCP daemon as well as ways to break out of the container (by *chroot*-ing into a container on the host filesystem, or by using *nsenter* from the privileged container). The cgroup exploit is an interesting blind attack, and you could certainly pull it off on an older system. However, as more production environments migrate and upgrade, this attack will become less applicable in time.
 
+Most of the tactics used here are also laid out in this [HackTricks cheat sheet](https://book.hacktricks.xyz/linux-hardening/privilege-escalation/docker-security/docker-breakout-privilege-escalation). The difference is that, with an eye towards DevSecOps, we want to understand what the environment is and what it is supposed to do. That way, you can provide and plan  meaningful remediations that are relevant with respect to the system's purpose.
 
-
-# Takeaways
+# Recommendations
 
 In general, acknowledge the following:
 - Disable cgroup v1 on systems that run Docker
