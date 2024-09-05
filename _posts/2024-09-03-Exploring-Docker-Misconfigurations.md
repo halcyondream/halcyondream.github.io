@@ -320,7 +320,7 @@ Let's revisit the "Important Context" from the TryHackMe site:
 
 In retrospect, this "context" is interesting. One one hand, it's easy to appreciate the assertion here, as the privileged container was one valid attack path. However, the bigger concern was, as noted, the daemon exposed over the TCP socket. This allowed us to tamper with the privileged container, to spawn new containers, and so forth.
 
-Perhaps, the authors had originally intended for Docker *not* to be exposed via its TCP socket. In that case, the privileged container is absolutely the bigger attack vector. If it were a pipeline manager, something in the spirit of Jenkins, then an attack against its web interface, a pipeline definition, or another service would be likely targets to break in.
+Perhaps, the authors had originally intended for Docker *not* to be exposed via its TCP socket. In that case, the privileged container becomes the bigger attack vector. If it were a pipeline manager, something in the spirit of Jenkins, then an attack against its frontend web interface, a malicious pipeline definition, a stolen private key, or another vulnerable service would be likely targets to break in.
 
 Most of the tactics used here are also laid out in this [HackTricks cheat sheet](https://book.hacktricks.xyz/linux-hardening/privilege-escalation/docker-security/docker-breakout-privilege-escalation). The difference is that, with an eye towards DevSecOps, we want to understand what the environment is and what it is supposed to do. That way, you can provide and plan  meaningful remediations that are relevant with respect to the system's purpose.
 
