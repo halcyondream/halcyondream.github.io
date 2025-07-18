@@ -103,7 +103,7 @@ PORT    STATE SERVICE
 
 <p>Now, let’s try to find any subdomains associated with the site or organization. Often, subdomains point to additional resources for the organization, including webpage content, webapp resources, and separate applications. Sometimes, they point to storage units that hold backups or secrets.</p>
 
-<p>Let’s start by using <em>Crt.sh</em> to enumerate any subdomains discovered by certificate transparency logs. Open the site and search for <em>bestcloudcompany.org</em>.</p>
+<p>Let’s start by using <em>Crt.sh</em> to enumerate any subdomains discovered by certificate transparency logs. Open the site and search for <em>bestcloudcompany.org</em>. Results are listed <a href="https://crt.sh/?q=bestcloudcompany.org">here</a>.</p>
 
 <p>Observe that <em>assets.bestcloudcompany.org</em> appears. Based solely on the name, we can speculate whether this is used to store information for the organization’s website.</p>
 
@@ -221,7 +221,7 @@ Non-authoritative answer:
 
 <h3 id="restoring-the-ami-vm-image">Restoring the AMI VM image</h3>
 
-<p><em>Note: If you are doing this in TryHackMe, you can skip these steps unless you want to learn more about the underlying AWS service configuration. This is intended for people who are trying to access without the THM platform.</em></p>
+<p><em>Note: If you are doing this in TryHackMe, you can skip these steps unless you want to learn more about the underlying AWS service configuration. This is intended to build more on the approach from the lab.</em></p>
 
 <p>The formal way to load an AMI image, even only with the purpose of extracting its contents, is to load it from an S3 bucket and import it as an EC2 instance. The bucket at <em>assets.bestcloudcompany.org</em> has solved the first step. Now let’s approach the next.</p>
 
@@ -309,7 +309,7 @@ Non-authoritative answer:
 
 <p>Take note of the <em>GroupId</em> value, which begins with “sg-“, as you will need it when launching the instance. (In this screenshot, its full value is redacted, but yours will be a small hex string.)</p>
 
-<p>Now, launch the instance, using the configuration values you got from previous steps:</p>
+<p>Now, launch the instance, using the configuration values you got from previous steps. For simplicity, use the <a href="https://aws.amazon.com/ec2/instance-types/">t3a.micro instance type</a>.</p>
 
 <div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>~$ aws ec2 run-instances \
     --image-id ami-... \
