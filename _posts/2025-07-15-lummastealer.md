@@ -8,7 +8,7 @@ Fake torrents have been a means to spread malware for well over a decade. The li
 
 >   Successfulcrab is actually a standard scene release tag but it's being spoofed currently by people uploading these junk .zipx/.link/.arj files.
 
-This led me to discover a Lumma stealer variant, which was disguised as one such torrent. It makes sense to see it since a [CISA report from May of this year](https://www.cisa.gov/news-events/cybersecurity-advisories/aa25-141b) calls out an increase in LummaC2 activity.
+This led me to discover a LummaStealer dropper, which was disguised as one such torrent. It makes sense to see it since a [CISA report from May of this year](https://www.cisa.gov/news-events/cybersecurity-advisories/aa25-141b) calls out an increase in LummaC2 activity.
 
 > LummaC2 malware is able to infiltrate victim computer networks and exfiltrate sensitive information, threatening vulnerable individuals’ and organizations’ computer networks across multiple U.S. critical infrastructure sectors. According to FBI information and trusted third-party reporting, this activity has been observed as recently as May 2025. The IOCs included in this advisory were associated with LummaC2 malware infections from November 2023 through May 2025.
 
@@ -34,7 +34,7 @@ The icing on the cake is that the binary uses the VLC media player icon, which m
 We can use `exiftool` to dump some useful preliminary information:
 
 ```
-$ exiftool Rick*scr
+$ exiftool sample.scr
 ExifTool Version Number         : 13.00
 File Name                       : sample.scr
 Directory                       : .
