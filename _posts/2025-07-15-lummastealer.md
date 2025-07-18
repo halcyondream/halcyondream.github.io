@@ -267,11 +267,11 @@ Project3+0x1a2c:
 0040b621 0f848e020000    je      0040b8b5
 ```
 
-The injected code's entrypoint is always at `buffer_addr+0xb610`. We can now analyze the second stage.
+The injected code's entrypoint is always at `buffer_addr+0xb610`. We can now analyze the second stage, which is the LummaStealer binary.
 
 Before continuing, [I recommend reading this article](https://www.microsoft.com/en-us/security/blog/2025/05/21/lumma-stealer-breaking-down-the-delivery-techniques-and-capabilities-of-a-prolific-infostealer/), which covers Lumma's overall behaviors. Take note of the C2 logic and specific strings like "HWID." Next, this sample was tested in an isolated lab running a fake HTTP webserver. At the time, I wasn't aware that this was a Lumma sample, so the server returns junk data (a string of 256 "A" characters). The injected code requires *some* data returned from the server, but at this time, I just haven't tried any of the C2 responses as noted in the Microsoft article. This write-up could become a two-parter.
 
-Finally, a brief caveat: I chose to study this in a 32-bit context because `.scr` files are 32 bits by nature. An analysis in a 64-bit context is likely overdue. The host system is Windows 10, Build 19045 (22H2).
+Finally, a brief caveat: I chose to study this in a 32-bit context because `.scr` files are 32 bits by nature. An analysis in a 64-bit context is likely overdue. The virtual machine used for analysis runs Windows 10, Build 19045 (22H2).
 
 Let me summarize the injected code's "default" logic:
 
