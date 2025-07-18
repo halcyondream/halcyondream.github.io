@@ -319,7 +319,7 @@ bu Project3+0x18c7 "r $t0 = eax; g";
 bu Project3+0x18da "r $t0 = eax; g"; 
 ```
 
-Then, you can dump with `.writemem`:
+Finally, set one at `Project3+0x1a2c` and run (or rerun) the dropper. Once it breaks, you can dump LummaStealer with `.writemem`:
 
 ```
 # Write from (buffer_addr, buffer_addr+size-1).
@@ -347,16 +347,16 @@ We can also use a tool like `pedis` (PE disassembler) to confirm that this disas
 
 ```
 $ pedis -r -e 0x400000 -o 0xb610 -m 32 dump.bin | head -n 10
-b610:                            55                              push ebp
-b611:                            53                              push ebx
-b612:                            57                              push edi
-b613:                            56                              push esi
-b614:                            81 ec 20 02 00 00               sub esp, 0x220
-b61a:                            e8 11 8f 03 00                  call 0x444530
-b61f:                            84 c0                           test al, al
-b621:                            0f 84 8e 02 00 00               jz 0x40b8b5
-b627:                            e8 b4 0a 03 00                  call 0x43c0e0
-b62c:                            84 c0                           test al, al
+b610:  55                 push ebp
+b611:  53                 push ebx
+b612:  57                 push edi
+b613:  56                 push esi
+b614:  81 ec 20 02 00 00  sub esp, 0x220
+b61a:  e8 11 8f 03 00     call 0x444530
+b61f:  84 c0              test al, al
+b621:  0f 84 8e 02 00 00  jz 0x40b8b5
+b627:  e8 b4 0a 03 00     call 0x43c0e0
+b62c:  84 c0              test al, al
 ```
 
 The dump even has a valid PE header:
@@ -455,13 +455,13 @@ In addition, Ghidra should correctly decompile the switch statements. (There are
 
 The disassembly and decompilation is not without its blind spots. First, all context of imported library functions is lost; the references appear only as their raw file addresses without labels. Second, because we also lose the stack and heap, the values of obfuscated call styles (calling registers or memory offsets) is also lost.
 
-An interesting obfuscation technique involves the use of a custom syscall wrapper. This is always located at `$t0+0x5446`. You can set a breakpoint prior to the main program's execution for analysis:
+An interesting obfuscation technique involves the use of a custom syscall wrapper. This is always located at `$t0+0x40000+0x5446`. You can set a breakpoint prior to the main program's execution for analysis:
 
 ```
 bu Project3+0x1a2c "bu $t0+0x00040000+0x5446; g"
 ```
 
-I chose to break at `0x1a2c` because that's the call site of the injected code.
+Again, I chose to break at `0x1a2c` because that's the call site of the injected code.
 
 The call site uses its own custom logic to make syscalls directly instead of using the higher-level function wrappers. 
 
