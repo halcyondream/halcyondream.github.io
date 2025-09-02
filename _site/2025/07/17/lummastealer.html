@@ -53,7 +53,7 @@
   <p>Successfulcrab is actually a standard scene release tag but it’s being spoofed currently by people uploading these junk .zipx/.link/.arj files.</p>
 </blockquote>
 
-<p>This led me to discover a Lumma stealer variant, which was disguised as one such torrent. It makes sense to see it since a <a href="https://www.cisa.gov/news-events/cybersecurity-advisories/aa25-141b">CISA report from May of this year</a> calls out an increase in LummaC2 activity.</p>
+<p>This led me to discover a LummaStealer dropper, which was disguised as one such torrent. It makes sense to see it since a <a href="https://www.cisa.gov/news-events/cybersecurity-advisories/aa25-141b">CISA report from May of this year</a> calls out an increase in LummaC2 activity.</p>
 
 <blockquote>
   <p>LummaC2 malware is able to infiltrate victim computer networks and exfiltrate sensitive information, threatening vulnerable individuals’ and organizations’ computer networks across multiple U.S. critical infrastructure sectors. According to FBI information and trusted third-party reporting, this activity has been observed as recently as May 2025. The IOCs included in this advisory were associated with LummaC2 malware infections from November 2023 through May 2025.</p>
@@ -78,7 +78,7 @@ sample.scr: PE32 executable (GUI) Intel 80386, for MS Windows, 5 sections
 
 <p>We can use <code class="language-plaintext highlighter-rouge">exiftool</code> to dump some useful preliminary information:</p>
 
-<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>$ exiftool Rick*scr
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>$ exiftool sample.scr
 ExifTool Version Number         : 13.00
 File Name                       : sample.scr
 Directory                       : .
@@ -308,11 +308,11 @@ Project3+0x1a2c:
 0040b621 0f848e020000    je      0040b8b5
 </code></pre></div></div>
 
-<p>The injected code’s entrypoint is always at <code class="language-plaintext highlighter-rouge">buffer_addr+0xb610</code>. We can now analyze the second stage.</p>
+<p>The injected code’s entrypoint is always at <code class="language-plaintext highlighter-rouge">buffer_addr+0xb610</code>. We can now analyze the second stage, which is the LummaStealer binary.</p>
 
 <p>Before continuing, <a href="https://www.microsoft.com/en-us/security/blog/2025/05/21/lumma-stealer-breaking-down-the-delivery-techniques-and-capabilities-of-a-prolific-infostealer/">I recommend reading this article</a>, which covers Lumma’s overall behaviors. Take note of the C2 logic and specific strings like “HWID.” Next, this sample was tested in an isolated lab running a fake HTTP webserver. At the time, I wasn’t aware that this was a Lumma sample, so the server returns junk data (a string of 256 “A” characters). The injected code requires <em>some</em> data returned from the server, but at this time, I just haven’t tried any of the C2 responses as noted in the Microsoft article. This write-up could become a two-parter.</p>
 
-<p>Finally, a brief caveat: I chose to study this in a 32-bit context because <code class="language-plaintext highlighter-rouge">.scr</code> files are 32 bits by nature. An analysis in a 64-bit context is likely overdue. The host system is Windows 10, Build 19045 (22H2).</p>
+<p>Finally, a brief caveat: I chose to study this in a 32-bit context because <code class="language-plaintext highlighter-rouge">.scr</code> files are 32 bits by nature. An analysis in a 64-bit context is likely overdue. The virtual machine used for analysis runs Windows 10, Build 19045 (22H2).</p>
 
 <p>Let me summarize the injected code’s “default” logic:</p>
 
@@ -359,7 +359,7 @@ bu Project3+0x18c7 "r $t0 = eax; g";
 bu Project3+0x18da "r $t0 = eax; g"; 
 </code></pre></div></div>
 
-<p>Then, you can dump with <code class="language-plaintext highlighter-rouge">.writemem</code>:</p>
+<p>Finally, set one at <code class="language-plaintext highlighter-rouge">Project3+0x1a2c</code> and run (or rerun) the dropper. Once it breaks, you can dump LummaStealer with <code class="language-plaintext highlighter-rouge">.writemem</code>:</p>
 
 <div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code># Write from (buffer_addr, buffer_addr+size-1).
 .writemem C:\dump.bin $t0 $t0+$t1-1
@@ -383,16 +383,16 @@ bu Project3+0x18da "r $t0 = eax; g";
 <p>We can also use a tool like <code class="language-plaintext highlighter-rouge">pedis</code> (PE disassembler) to confirm that this disassembles to the correct instructions:</p>
 
 <div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>$ pedis -r -e 0x400000 -o 0xb610 -m 32 dump.bin | head -n 10
-b610:                            55                              push ebp
-b611:                            53                              push ebx
-b612:                            57                              push edi
-b613:                            56                              push esi
-b614:                            81 ec 20 02 00 00               sub esp, 0x220
-b61a:                            e8 11 8f 03 00                  call 0x444530
-b61f:                            84 c0                           test al, al
-b621:                            0f 84 8e 02 00 00               jz 0x40b8b5
-b627:                            e8 b4 0a 03 00                  call 0x43c0e0
-b62c:                            84 c0                           test al, al
+b610:  55                 push ebp
+b611:  53                 push ebx
+b612:  57                 push edi
+b613:  56                 push esi
+b614:  81 ec 20 02 00 00  sub esp, 0x220
+b61a:  e8 11 8f 03 00     call 0x444530
+b61f:  84 c0              test al, al
+b621:  0f 84 8e 02 00 00  jz 0x40b8b5
+b627:  e8 b4 0a 03 00     call 0x43c0e0
+b62c:  84 c0              test al, al
 </code></pre></div></div>
 
 <p>The dump even has a valid PE header:</p>
@@ -492,12 +492,12 @@ Optional/Image header
 
 <p>The disassembly and decompilation is not without its blind spots. First, all context of imported library functions is lost; the references appear only as their raw file addresses without labels. Second, because we also lose the stack and heap, the values of obfuscated call styles (calling registers or memory offsets) is also lost.</p>
 
-<p>An interesting obfuscation technique involves the use of a custom syscall wrapper. This is always located at <code class="language-plaintext highlighter-rouge">$t0+0x5446</code>. You can set a breakpoint prior to the main program’s execution for analysis:</p>
+<p>An interesting obfuscation technique involves the use of a custom syscall wrapper. This is always located at <code class="language-plaintext highlighter-rouge">$t0+0x40000+0x5446</code>. You can set a breakpoint prior to the main program’s execution for analysis:</p>
 
 <div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>bu Project3+0x1a2c "bu $t0+0x00040000+0x5446; g"
 </code></pre></div></div>
 
-<p>I chose to break at <code class="language-plaintext highlighter-rouge">0x1a2c</code> because that’s the call site of the injected code.</p>
+<p>Again, I chose to break at <code class="language-plaintext highlighter-rouge">0x1a2c</code> because that’s the call site of the injected code.</p>
 
 <p>The call site uses its own custom logic to make syscalls directly instead of using the higher-level function wrappers.</p>
 
