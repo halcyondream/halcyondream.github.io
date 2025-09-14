@@ -37,10 +37,10 @@ Suppose you have an API endpoint defined like this (in pseudocode):
 ```
 @endpoint(method="GET", path="/userinfo")
 def handler(request) is:
-	if request.header["authToken"], then
-		return 200, userInfo()
-	else
-		return 403, error()
+    if request.header["authToken"], then
+        return 200, userInfo()
+    else
+        return 403, error()
 ```
 
 In this example, the client must send a request whose `authorization` header is case-sensitive. This is a common implementation mistake with frameworks like Python, Node, and so forth.
@@ -160,11 +160,11 @@ The config template specifies which secrets file(s) should be used. The secrets 
 
 ```
 $ podman run --rm \
-	-v $(pwd):/templates \
-	--env-file ".env" \
-	docker.io/projectdiscovery/nuclei:v3.4.4 \
-	-config /templates/config.yaml \
-	-vv -debug
+    -v $(pwd):/templates \
+    --env-file ".env" \
+    docker.io/projectdiscovery/nuclei:v3.4.4 \
+    -config /templates/config.yaml \
+    -vv -debug
 
                      __     _
    ____  __  _______/ /__  (_)
@@ -234,16 +234,16 @@ At the time of writing, this corner case accepts headers like such:
 ```go
 // Apply applies the headers auth strategy to the request
 func (s *HeadersAuthStrategy) Apply(req *http.Request) {
-	for _, header := range s.Data.Headers {
-		req.Header.Set(header.Key, header.Value)
-	}
+    for _, header := range s.Data.Headers {
+        req.Header.Set(header.Key, header.Value)
+    }
 }
 
 // ApplyOnRR applies the headers auth strategy to the retryable request
 func (s *HeadersAuthStrategy) ApplyOnRR(req *retryablehttp.Request) {
-	for _, header := range s.Data.Headers {
-		req.Header.Set(header.Key, header.Value)
-	}
+    for _, header := range s.Data.Headers {
+        req.Header.Set(header.Key, header.Value)
+    }
 }
 
 ```
@@ -257,7 +257,7 @@ The `Header.Set` method actually resolves deep into the `net/http` package, whic
 // canonicalized by [textproto.CanonicalMIMEHeaderKey].
 // To use non-canonical keys, assign to the map directly.
 func (h Header) Set(key, value string) {
-	textproto.MIMEHeader(h).Set(key, value)
+    textproto.MIMEHeader(h).Set(key, value)
 }
 ```
 
@@ -268,7 +268,7 @@ The `textproto` package handles the setting of these canonical values:
 // the single element value. It replaces any existing
 // values associated with key.
 func (h MIMEHeader) Set(key, value string) {
-	h[CanonicalMIMEHeaderKey(key)] = []string{value}
+    h[CanonicalMIMEHeaderKey(key)] = []string{value}
 }
 ...
 
@@ -281,60 +281,60 @@ func (h MIMEHeader) Set(key, value string) {
 // If s contains a space or invalid header field bytes, it is
 // returned without modifications.
 func CanonicalMIMEHeaderKey(s string) string {
-	// Quick check for canonical encoding.
-	upper := true
-	for i := 0; i < len(s); i++ {
-		c := s[i]
-		if !validHeaderFieldByte(c) {
-			return s
-		}
-		if upper && 'a' <= c && c <= 'z' {
-			s, _ = canonicalMIMEHeaderKey([]byte(s))
-			return s
-		}
-		if !upper && 'A' <= c && c <= 'Z' {
-			s, _ = canonicalMIMEHeaderKey([]byte(s))
-			return s
-		}
-		upper = c == '-'
-	}
-	return s
+    // Quick check for canonical encoding.
+    upper := true
+    for i := 0; i < len(s); i++ {
+        c := s[i]
+        if !validHeaderFieldByte(c) {
+            return s
+        }
+        if upper && 'a' <= c && c <= 'z' {
+            s, _ = canonicalMIMEHeaderKey([]byte(s))
+            return s
+        }
+        if !upper && 'A' <= c && c <= 'Z' {
+            s, _ = canonicalMIMEHeaderKey([]byte(s))
+            return s
+        }
+        upper = c == '-'
+    }
+    return s
 }
 
 // validHeaderFieldByte reports whether c is a valid byte in a header
 // field name. RFC 7230 says:
 //
-//	header-field   = field-name ":" OWS field-value OWS
-//	field-name     = token
-//	tchar = "!" / "#" / "$" / "%" / "&" / "'" / "*" / "+" / "-" / "." /
-//	        "^" / "_" / "`" / "|" / "~" / DIGIT / ALPHA
-//	token = 1*tchar
+//    header-field   = field-name ":" OWS field-value OWS
+//    field-name     = token
+//    tchar = "!" / "#" / "$" / "%" / "&" / "'" / "*" / "+" / "-" / "." /
+//            "^" / "_" / "`" / "|" / "~" / DIGIT / ALPHA
+//    token = 1*tchar
 func validHeaderFieldByte(c byte) bool {
-	// mask is a 128-bit bitmap with 1s for allowed bytes,
-	// so that the byte c can be tested with a shift and an and.
-	// If c >= 128, then 1<<c and 1<<(c-64) will both be zero,
-	// and this function will return false.
-	const mask = 0 |
-		(1<<(10)-1)<<'0' |
-		(1<<(26)-1)<<'a' |
-		(1<<(26)-1)<<'A' |
-		1<<'!' |
-		1<<'#' |
-		1<<'$' |
-		1<<'%' |
-		1<<'&' |
-		1<<'\'' |
-		1<<'*' |
-		1<<'+' |
-		1<<'-' |
-		1<<'.' |
-		1<<'^' |
-		1<<'_' |
-		1<<'`' |
-		1<<'|' |
-		1<<'~'
-	return ((uint64(1)<<c)&(mask&(1<<64-1)) |
-		(uint64(1)<<(c-64))&(mask>>64)) != 0
+    // mask is a 128-bit bitmap with 1s for allowed bytes,
+    // so that the byte c can be tested with a shift and an and.
+    // If c >= 128, then 1<<c and 1<<(c-64) will both be zero,
+    // and this function will return false.
+    const mask = 0 |
+        (1<<(10)-1)<<'0' |
+        (1<<(26)-1)<<'a' |
+        (1<<(26)-1)<<'A' |
+        1<<'!' |
+        1<<'#' |
+        1<<'$' |
+        1<<'%' |
+        1<<'&' |
+        1<<'\'' |
+        1<<'*' |
+        1<<'+' |
+        1<<'-' |
+        1<<'.' |
+        1<<'^' |
+        1<<'_' |
+        1<<'`' |
+        1<<'|' |
+        1<<'~'
+    return ((uint64(1)<<c)&(mask&(1<<64-1)) |
+        (uint64(1)<<(c-64))&(mask>>64)) != 0
 }
 ```
 
@@ -344,12 +344,12 @@ The `CanonicalMIMEHeaderKey` is of interest for two reasons. On one hand, it's r
 // If s contains a space or invalid header field bytes, it is
 // returned without modifications.
 func CanonicalMIMEHeaderKey(s string) string {
-	...
-		if !validHeaderFieldByte(c) {
-			return s
-		}
+    ...
+        if !validHeaderFieldByte(c) {
+            return s
+        }
   ...
-	return s
+    return s
 }
 ```
 
@@ -362,16 +362,16 @@ With all of that in mind, you can make a quick fix to `pkg/authprovider/authx/he
 ```go
 // Apply applies the headers auth strategy to the request
 func (s *HeadersAuthStrategy) Apply(req *http.Request) {
-	for _, header := range s.Data.Headers {
-		req.Header[header.Key] = []string{header.Value}
-	}
+    for _, header := range s.Data.Headers {
+        req.Header[header.Key] = []string{header.Value}
+    }
 }
 
 // ApplyOnRR applies the headers auth strategy to the retryable request
 func (s *HeadersAuthStrategy) ApplyOnRR(req *retryablehttp.Request) {
-	for _, header := range s.Data.Headers {
-		req.Header[header.Key] = []string{header.Value}
-	}
+    for _, header := range s.Data.Headers {
+        req.Header[header.Key] = []string{header.Value}
+    }
 }
 ```
 
@@ -394,11 +394,11 @@ $ podman build -t nuclei:3.4.4-nocanon .
 ...
 
 $ podman run --rm \
-	-v $(pwd):/templates \
-	--env-file ".env" \
-	nuclei:3.4.4-nocanon \
-	-config /templates/config.yaml \
-	-vv -debug
+    -v $(pwd):/templates \
+    --env-file ".env" \
+    nuclei:3.4.4-nocanon \
+    -config /templates/config.yaml \
+    -vv -debug
 
                      __     _
    ____  __  _______/ /__  (_)
