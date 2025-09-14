@@ -1,6 +1,6 @@
 ---
 layout: post
-title: When Web Servers Don't Accept Case-Sensitive Header Keys
+title: When Web Servers Don't Accept Case-insensitive Header Keys
 date: 2025-09-14
 ---
 
