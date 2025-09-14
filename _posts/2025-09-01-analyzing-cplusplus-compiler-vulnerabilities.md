@@ -4,27 +4,26 @@ title: Analyzing C++ Compiler Vulnerabilities
 date: 2025-09-01
 ---
 
-Ret2 did a [two-part writeup about a pwn2own 2024 challenge](https://blog.ret2.io/2024/07/17/pwn2own-auto-2024-charx-bugs/), where they exploited an electrical vehicle charging station: the CHARX SEC-3100. Both the solution and the [firmware (which is not encrypted)](https://www.phoenixcontact.com/en-us/products/ac-charging-controller-charx-sec-3100-1139012#downloads-link-target) are available online at this time. The firmware is 32-bit ARM and runs in a Linux environment, and the updates are all squashfs'ed, ready to be flashed or unpacked. Their exploit relied on a use-after-free vulnerability, coupled with some interesting side effects from both the code and the standard library version used.
+Ret2 did a [two-part writeup about a pwn2own 2024 challenge](https://blog.ret2.io/2024/07/17/pwn2own-auto-2024-charx-bugs/), where they exploited an electrical vehicle charging station: the CHARX SEC-3100. Both the solution and the [firmware (which is not encrypted)](https://www.phoenixcontact.com/en-us/products/ac-charging-controller-charx-sec-3100-1139012#downloads-link-target) are available online. The firmware is 32-bit ARM and runs in a Linux environment, and the updates are all squashfs'ed, ready to be flashed or unpacked. Their exploit relied on a use-after-free vulnerability, coupled with some interesting side effects from both the code and the standard library version used.
 
-To accompany the Pwn2Own writeups, they also provide a [public challenge](https://wargames.ret2.systems/level/charxpost_destructors), which is part of their wargames platform. To demonstrate the use-after-free vulnerability specifically, they *also* provide some toy code in the first of the two writeups. Both the challenge and the toy code have the same UAF bug, which is triggered by the outer class' destructor on exit.
+To accompany the Pwn2Own writeups, they also provide a [public challenge](https://wargames.ret2.systems/level/charxpost_destructors), which is part of their wargames platform. To demonstrate the use-after-free vulnerability specifically, they *also* provide some toy code in the first of two writeups. Both the challenge and the toy code have the same UAF bug, which is triggered by the outer class' destructor on exit.
 
-I wanted to do a deeper dive into the conditions that lead to exploitation in both the toy code example and the Wargames challenge code. The reader is left to solve the Wargames challenge on their own. The intention here is to walk through some C++ and GCC foundations to understand the problems they introduced and how they work together on the path to exploitation.
+I wanted to do a deeper dive into the conditions that lead to exploitation in both the toy code and the Wargames challenge code. The intention here is to walk through some C++ and GCC foundations to understand the problems they introduced in the firmware. Taken together, they pave the way to exploitation.
 
-In particular, the analysis is broken up into a few different parts, most of which were addressed by the two writeups on the EV challenge:
+This analysis is broken up into a few parts, each of which build on Ret2's writeup:
 
 - Understanding the role of [C++ virtual functions](https://en.cppreference.com/w/cpp/language/virtual.html) (and how to spot them)
 - Tracing what *free*'d elements look like in [glibc's tcache](https://sourceware.org/glibc/wiki/MallocInternals)
 - Seeing how an older glibc standard affects code compilation and execution
 - Leveraging the placement of virtual functions in the [vtable](https://en.wikipedia.org/wiki/Virtual_method_table)
 
-Each section contains a quote from the second writeup which explains where my thinking was during exploitation. The intention is to bridge key concepts from the writeup with corresponding behaviors in the Wargames challenge. 
+Each section contains a quote from the second writeup which explains where my thinking was during exploitation. This writeup mostly focuses on how the C++ code compiles. Those understandings are really the key to solving the challenge.  
 
-This writeup mostly focuses on how the C++ code compiles. Those understandings are really the key to solving the challenge.  
 # Virtual Functions
 
 > Assuming we can control a node along this traversal, we can easily hijack control flow with the virtual call to `get_connection_id`.
 
-Abusing virtual functions to hijack control flow is an interesting side effect of how virtual functions compile.
+Under the right conditions, you can hijack control flow by abusing virtual functions. This is a side side-effect of how they compile.
 
 As a base case, let's consider the following code:
 
@@ -35,7 +34,7 @@ public:
 };
 ```
 
-We will implement every version of `Item::foo` with an innocuous definition:
+Implement `Item::foo` with an innocuous definition:
 
 ```c++
 void Item::foo() {
@@ -52,7 +51,7 @@ int main() {
 }
 ```
 
-We can compile it with debugging flags for clarity:
+Compile it with debugging flags for clarity:
 
 ```
 gcc -g demo.cpp -o demo
@@ -87,7 +86,7 @@ public:
 };
 ```
 
-We can compile with debugging flags again and disassemble main:
+Again, compile with debugging flags and disassemble main:
 
 ```
 (gdb) disas main
@@ -175,7 +174,7 @@ So, the virtual function is set up with this chunk of instructions, and invoked 
    0x00000000000011aa <+80>:    call   rdx
 ```
 
-This is conceptually similar to the way function pointers work in standard C. Observe the call to `fptr` is also a call to a register, RDX:
+This is conceptually similar to the way function pointers work in standard C. Observe that the call to `fptr` is also a call to a register, RDX:
 
 ```
 $ cat fptr.c
@@ -208,7 +207,7 @@ leave
 ret
 ```
 
-A major difference, however, is what's happening behind the scenes. Every virtual function defined in a class will compile a "vtable," which is a buffer of memory containing offsets to each virtual function. We can illustrate what the vtable dereference chain by annotating the disassembly:
+A major difference, however, is what's happening behind the scenes. Every virtual function, which is defined in a class, will compile addresses to a "vtable," which is a buffer of memory containing offsets to each virtual function. We can illustrate the vtable dereference chain by annotating the disassembly:
 
 ```
 mov    rax, [...]  // *item
@@ -251,9 +250,11 @@ The address of `Item::foo` exists at offset `0x8` in the Item pointer's vtable.
 
 > Fully understanding glibc tcache internals isn’t necessary here; it suffices to say that a tcache bin is just a singly-linked list of free chunks of the same size, where the next pointer is placed at offset 0 in the free chunk.
 
-The tcache is a glibc internal mechanism that can be abused in applications using dynamic memory allocation. Over the years, it's served as the object of a few different exploit classes involving dynamic allocation. This walkthrough will show you how to navigate a use-after-free (UAF) bug which involves a tcache entry and a free'd `std::vector`.
+The tcache is a glibc internal mechanism. It provides a way for the memory allocator to quickly re-use memory from "buckets" as opposed to pulling memory from the entire heap every time. 
 
-The tcache was introduced in glibc 2.26 back in 2017. It still plays a major role in the glibc memory allocator today. There is a [great video on tcache behavior](https://www.youtube.com/watch?v=0jHtqqdVv1Y) and a [good walkthrough on the source code](https://ctf-wiki.mahaloz.re/pwn/linux/glibc-heap/implementation/tcache/). We'll cover some basics and really focus on how they apply to the `std::vector` type.
+Unfortunately, it can be abused. Over the years, it's served as the object of a few different exploit classes which involve dynamic memory allocation. We consider it in the context of a particular use-after-free (UAF) bug which involves a tcache entry and a free'd `std::vector`.
+
+The tcache was introduced in glibc 2.26 back in 2017. It still plays a major role in the its memory allocator today. There is a [great video on tcache behavior](https://www.youtube.com/watch?v=0jHtqqdVv1Y) and a [good walkthrough on the source code](https://ctf-wiki.mahaloz.re/pwn/linux/glibc-heap/implementation/tcache/). We'll cover some basics and really focus on how they apply to the `std::vector` type.
 
 Let's start by exploring the tcache entry. In glibc, a `tcache_entry` is both a struct and a typedef of that struct:
 
@@ -267,7 +268,7 @@ struct tcache_entry
 tcache_entry;
 ```
 
-The `std::vector` type is a C++ linked-list which can store arbitrary data types. Under the hood, it involves some dynamic memory allocations. It is the object of a free Ret2 Wargame challenge and is also the focus of discussion here.
+The `std::vector` type is a C++ linked-list which can store arbitrary data types. Under the hood, it involves some dynamic memory allocations. It is a focus area of the Wargame challenge and is also the focus of discussion here.
 
 Let's start with some driver code.
 
@@ -303,9 +304,9 @@ This code prints the following:
 free(): double free detected in tcache 2
 ```
 
-The first row is what we, the developer, expected. The second row is the consequence of using the vector after a *free* operation. There's two important dimensions here:
+The first row is what we, the developer, expected. The second row is the consequence of using the vector after a *free* operation. There's two important callouts with respect to the second row:
 
-- The elements at `v[0]` and `v[1]` represent data from a tcache entry
+- The elements at `v[0]` and `v[1]` represent data from a tcache entry: specifically, the *next* and *key* fields
 - The "double free" error implies that deleting a vector involves some dynamic memory allocation and deallocation
 
 At the crash site, `*next` is a pointer to `0x188703` and the `*key` is `0x5337669691617803236`. Tcache entries exist only after you have *free*'d some allocated memory. In C++, this can include destructors, the `delete` operator, and classic calls to the `free` standard library function.
@@ -315,25 +316,25 @@ At the crash site, `*next` is a pointer to `0x188703` and the `*key` is `0x53376
   struct tcache_perthread_struct *key: 0x5337669691617803236
 ```
 
-Tcache entries are linked lists of *free*'d items of the same "bin" size. Bin sizes are usually powers of two: 8, 16, 32, 64. The logic that defines each bin size is defined in `malloc.c`, and like many things in glibc, its true definition is shrouded in macros. 
+Tcache entries are linked lists of *free*'d items of the same "bin" size. Bin sizes are usually sequences of powers of two, starting at some offset: 8, 16, 32, 64. The logic that defines each bin size is defined in `malloc.c`, and like many things in glibc, its true definition is shrouded in macros. 
 
 Developers can use the output of the `malloc_usable_size` function to help determine which bin an allocation will be *free*'d to. Otherwise, you're left to the debugger, but that's sometimes all you really need.
 
-In this example, the value of `*next` (0x188703) is not an address and will not dereference to anything. This is expected because only one object of that bin's size has been *free*'d. If there were another object of an equivalent size *free*'d before the vector, `*next` would point to it.
+In this example, the value of `*next` (0x188703) is not an address and will not dereference to anything. This is expected because only one object of that bin's size has been *free*'d. If there were another object of an equivalent size that was *free*'d before the vector, `*next` would point to it instead.
 
-So, to facilitate control over the tcache, we need to free something else, something *other than the vector*, but of its same size.
+So, to control the tcache, we need to free something else: something *other than the vector*, but of its same size.
 
-Let's do try that now.
+Let's do that now.
 
 # Finding allocation sizes for tcache bins
 
 > When this node is freed during the list destructor, the chunk will have a size class of `0x68`, and will be placed into the [tcache](https://ir0nstone.gitbook.io/notes/types/heap/the-tcache) bin of that size
 
-Here, we want to consider what size a chunk will be by the time a vector is *free*'d.
+Here, we want to consider what size some memory chunk will be by the time a vector is *free*'d.
 
 If you [read the source code for a vector](https://github.com/gcc-mirror/gcc/blob/master/libstdc%2B%2B-v3/include/bits/stl_vector.h), you'll notice that the vector class template actually extends the `_Vector_base` structure. You'll also notice a `_Vector_impl _M_impl` field, which is the first field defined in this, and has a couple of allocation and deallocation methods near it. This `_M_impl` structure is the backend of the vector type and is a major data structure responsible for many of its dynamic behaviors.
 
-The first field in this structure represents the first item in the vector. In fact, when you view the address of a vector, this structure field is the address you get back.
+The first field in this structure represents the first item in the vector. In fact, when you view the address of a vector, this structure field is the address that you get back.
 
 When the vector's own destructor is called, it calls the destructor of `~Vector_base` last. Here's the pared-down destructor definition for clarity:
 
@@ -345,7 +346,7 @@ When the vector's own destructor is called, it calls the destructor of `~Vector_
 }
 ```
 
-The `_M_deallocate` function has  a call path that leads to `free`. It's easier to appreciate in the debugger. 
+The `_M_deallocate` function has a call path that leads to `free`. It's tracable in static analysis, but also a bit of a pain. It's easier to appreciate in the debugger. 
 
 We can break at the call to the vector's destructor in *main*, inspect the argument given, and then break on free. If we do one step, we land at the invocation of *free*, where we find that the vector's address is being *free*'d: that is, the `_M_impl` structure, which is allocated at `0x6ee800`.
 
@@ -378,7 +379,7 @@ $8 = 0x55555556b2f0
 
 Continue execution. Notice *free* is called only one time. So, the size of the data pointed to by `_M_start` is our culprit for tcache binning.
 
-If we can find the size of the `_M_impl` structure, we can get an idea of what sized allocations will end up in its tcache bin and, thus, link to its `next` pointer. To get this idea for size, we can apply the reverse logic as before and track where the vector operation allocates memory. 
+If we can find the size of the `_M_impl` structure when the vector is destroyed, we can get an idea of what sized allocations will end up the tcache bin where the vector itself ends up after it is free'd. In this way, we also find a link to its `next` pointer. To help our analysis, we can reverse the logic from before and track which vector method actually allocates memory. 
 
 First, let's acknowledge that the internal structure is initialized only after the vector is given some elements. We can observe this by tracking the memory from the vector's creation until the first call to `push_back`:
 
@@ -427,18 +428,16 @@ Breakpoint 2, __GI___libc_malloc (bytes=8) at ./malloc/malloc.c:3301
 #6  std::vector<>::emplace_back<>
 #7  std::vector<>::push_back
 #8  main
-(gdb) print/x $rdi
-$1 = 0x8
 ```
 
-We can see the call path to `push_back` leads to the allocation. Because `malloc` accepts one argument, a *size_t*, we can see the initial allocation size by printing its argument:
+We can see that the call to `push_back` leads to the allocation. Because `malloc` accepts one argument, a *size_t*, we can see the initial allocation size by printing its first and only argument:
 
 ```
 (gdb) print/x $rdi
 $1 = 0x8
 ```
 
-Indeed, integers in x64 are four bytes, so this matches our expectations.
+Indeed, 64-bit integers are eight bytes, so this matches our expectations.
 
 Now, recall that each invocation of `push_back` will actually call `malloc`. This has some interesting implications. 
 
@@ -466,10 +465,11 @@ This prints:
 Vector backing usable: 0x0
 ```
 
-This makes sense because we haven't actually initialized the vector's internal structure with memory. If we add one invocation of `v.push_back(x)`, we get `0x8` (8 bytes). After four invocations, we get `0x40` (64 bytes), and so on. 
+This makes sense because we haven't actually initialized the vector's internal structure with memory. If we add one invocation of `v.push_back(x)`, we get `0x4` (a 4-byte allocation). After five invocations, we get `0x40` (64 bytes), and so on. 
 
 Observe some other interesting behaviors:
 - If you break on each execution of malloc, and inspect the argument at RDI, you can see the size of the vector's internal data structure increase by 4, 8, 16, and 32, respectively. 
+- We can semi-formalize this growth as 2<sup>2+*N*-1</sup> if *N* > 0. The value 2<sup>2</sup> = 4 works out here because we're using a vector of integers, and an int is four bytes (32-bits). If this were a 64-bit integer, we would adjust it to 2<sup>3+*N*-1</sup> if *N* > 0, given 2<sup>3</sup> = 8.
 - Likewise, if you run something like `v.erase(v.begin())`, the size of the internal structure will *not* go down or reduce. 
 - Finally, the call to `v.~vector` will free the internal structure, whose final size is that of the internal structure after all those calls to `push_back`. 
 
@@ -1070,9 +1070,11 @@ void add_gun() {
 
 Additionally, we know that each charge plug's destructor is invoked under two conditions: when the user explicitly removes it (option 2), or when the vector is destroyed in the Charger's own destructor (bug). This gives us an opportunity to create a `ChargeGun`-sized buffer which is *free*'d after the user exits `main`; if we can create a tcache of user-controlled data, we can try to invoke the address of `Charger::debug_mode` and get a shell.
 
-To control the value of RAX, we can play with loops of creating, and corresponding loops of destroying, the `description` buffer. From analyzing the toy code earlier, we know that the vector's internal size will equal the number of `push_back` calls multiplied by 8, the size of a 64-bit pointer. We can perform fuzzing exercises by creating different amounts of buffers, free-ing the first one (index `0`), and allowing the UAF condition to take the spotlight.
+To control the value of RAX, we can play with loops of creating, and corresponding loops of destroying, the `description` buffer. From analyzing the toy code earlier, we know that the vector's internal size will equal 2<sup>3+*N*-1</sup> after one push operation.
 
-In this case, three is the magic number:
+We can perform fuzzing exercises by creating different amounts of buffers, free-ing the first one (index `0`), and allowing the UAF condition to take the spotlight. 
+
+In this case, three is the magic number, yielding a buffer of size 2<sup>3+3-1</sup> &rightarrow; 2<sup>5</sup> &rightarrow; 32. We can create a buffer somewhat less than 32 bytes in order to achieve our goal. For simplicity, we can start use a 24-byte payload, since it will neatly fit three eight-byte addresses and provide eight bytes of headroom:
 
 ```python
 create_iters = 3
