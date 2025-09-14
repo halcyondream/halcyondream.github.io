@@ -348,7 +348,7 @@ func CanonicalMIMEHeaderKey(s string) string {
         if !validHeaderFieldByte(c) {
             return s
         }
-  ...
+    ...
     return s
 }
 ```
@@ -378,7 +378,7 @@ func (s *HeadersAuthStrategy) ApplyOnRR(req *retryablehttp.Request) {
 Then build it:
 
 ```
-docker build -t nuclei:noncanon
+docker build -t nuclei:noncanon .
 ```
 
 There's an open bug in Nuclei that prevents dynamic secret scans from prefetching, so you'll need to target an old version as of now. (There's a PR for this so hopefully not forever.) At the time of writing, Nuclei 3.4.4 is successfully able to run this and is the version pushed in the latest container, so make sure to:
