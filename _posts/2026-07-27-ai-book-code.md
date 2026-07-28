@@ -256,7 +256,7 @@ print(person)  # Person(name='John', age=30, occupation='software engineer')
 
 Instructor's client uses [different modes](https://python.useinstructor.com/modes-comparison/), which are available via the `mode` parameter in the `from_provider` function.
 
-By default, clients use the `mode=instructor.Mode.TOOLS` under the hood. This converts each structured output to the provider's native tool format. Other options, like `instructor.Mode.JSON_SCHEMA` will make a best-effort attempt to leverage the provider API's native structured-text fields if those options are available. For now, the tool mode is fine.
+By default, clients use the `mode=instructor.Mode.TOOLS` under the hood. This converts each structured output to the provider's native tool format. Other options, like `instructor.Mode.JSON_SCHEMA` will make a best-effort attempt to leverage the provider API's native structured-text fields if those options are available. Later, we'll switch to the `instructor.Mode.RESPONSES_TOOLS` to support OpenAI's Responses API. For now, the default tool mode is fine.
 
 The `create` method doesn't really tell us anything about the API in use. The Chat Completions API and Responses API both support a `create` operation. The first question we should ask is: does it matter which API it uses?
 
@@ -311,7 +311,7 @@ We can set a breakpoint there and backtrace again:
 
 The first line of the implementation shows that the model is validated and a POST request to the appropriate API:
 
-```
+```python
         validate_response_format(response_format)
         return self._post(
             "/chat/completions",
@@ -332,12 +332,27 @@ If we step into the `self._post` call, we find a line that constructs the underl
 We can inspect the `opts` value in the debugger:
 
 ```
-FinalRequestOptions(method='post', url='/chat/completions', params={}, headers=NOT_GIVEN, max_retries=NOT_GIVEN, timeout=NOT_GIVEN, files=None, idempotency_key=None, post_parser=NOT_GIVEN, follow_redirects=None, security={'bearer_auth': True}, synthesize_event_and_data=None, content=None, json_data={'messages': [{'role': 'user', 'content': 'Extract: John is a 30-year-old software engineer'}], 'model': 'gpt-4o', 'tool_choice': {'type': 'function', 'function': {'name': 'Person'}}, 'tools': [{'type': 'function', 'function': {'name': 'Person', 'description': 'Correctly extracted `Person` with all the required parameters with correct types', 'parameters': {'properties': {'name': {'title': 'Name', 'type': 'string'}, 'age': {'title': 'Age', 'type': 'integer'}, 'occupation': {'title': 'Occupation', 'type': 'string'}}, 'required': ['age', 'name', 'occupation'], 'type': 'object'}}}]}, extra_json=None)
+FinalRequestOptions(
+method='post', 
+url='/chat/completions', 
+params={}, 
+headers=NOT_GIVEN, 
+max_retries=NOT_GIVEN, 
+timeout=NOT_GIVEN, 
+files=None, 
+idempotency_key=None, 
+post_parser=NOT_GIVEN, 
+follow_redirects=None, 
+security={'bearer_auth': True}, 
+synthesize_event_and_data=None, 
+content=None, 
+json_data={'messages': [{'role': 'user', 'content': 'Extract: John is a 30-year-old software engineer'}], 'model': 'gpt-4o', 'tool_choice': {'type': 'function', 'function': {'name': 'Person'}}, 'tools': [{'type': 'function', 'function': {'name': 'Person', 'description': 'Correctly extracted `Person` with all the required parameters with correct types', 'parameters': {'properties': {'name': {'title': 'Name', 'type': 'string'}, 'age': {'title': 'Age', 'type': 'integer'}, 'occupation': {'title': 'Occupation', 'type': 'string'}}, 'required': ['age', 'name', 'occupation'], 'type': 'object'}}}]}, 
+extra_json=None)
 ```
 
 The `json_data` contains the same `messages` block that we gave it in the original invocation from the toy code example earlier. However, we also observe two interesting fields here: `tool_choice` and `tools`. As noted earlier, this is expected because we're using the default "tools" mode, but let's explore it a little more.
 
-The `tool_choice` tells the completions API to use a specific tool. Notice that the name of this tool matches the Pydantic base model we defined in the code earlier:
+The [`tool_choice` parameter](https://developers.openai.com/api/reference/python/resources/chat/subresources/completions/methods/create#(resource)%20chat.completions%20%3E%20(method)%20create%20%3E%20(params)%20default.non_streaming%20%3E%20(param)%20tool_choice%20%3E%20(schema)) tells the completions API to use a specific tool. Notice that the name of this tool matches the Pydantic base model we defined in the code earlier:
 
 ```
 print(json.dumps(opts.json_data['tool_choice'], indent=2))
@@ -350,7 +365,7 @@ print(json.dumps(opts.json_data['tool_choice'], indent=2))
 }
 ```
 
-The `tools` array defines our schema *as a tool*, along with explicit instructions to use it as such:
+The [`tools` array](https://developers.openai.com/api/reference/python/resources/chat/subresources/completions/methods/create#(resource)%20chat.completions%20%3E%20(method)%20create%20%3E%20(params)%20default.non_streaming%20%3E%20(param)%20tools%20%3E%20(schema)) defines our schema *as a tool*, along with explicit instructions to use it as such:
 
 ```
 print(json.dumps(opts.json_data['tools'][0], indent=2))
@@ -390,22 +405,16 @@ This schema is identical to the `Person.model_dump_schema()` and is implemented 
 
 So, in the backend, Instructor didn't really "resolve" an API. It just used the chat completions API and defined the schema as a tool.
 
-Is this a bad thing? It's hard to say. The completions API is more supported than the responses API. But if you're developing to OpenAI explicitly, you probably want to follow their guidance and mitgrate to responses. Fundamentally, the results should be equivalent for text extraction, but that assumption could easily be broken depending on what you're trying to do.
-
-For clarity, Instructor does allow you to invoke the `responses.create` function explicitly. This is the only code change we need to make:
+For clarity, Instructor does allow you to invoke the `responses.create` function explicitly. A better way to handle this is by specifying the `RESPONSES_TOOLS` mode in the constructor. This is the only code change we need to make:
 
 ```python
 client = instructor.from_provider(
     "openai/gpt-5.6-luna",
     mode=instructor.Mode.RESPONSES_TOOLS
 )
-
-# Extract structured data from natural language
-person = client.responses.create(
-    ...
 ```
 
-This would work, but only if your model or provider supports the Responses API. OpenAI and HuggingFace both do. Ollama and many others do not natively support it. Even the smaller `gpt-4o` does not support it (which is why I changed the model in this version).
+This would work, but only if your model or provider supports the Responses API. OpenAI and HuggingFace both do. Ollama and many others do not natively support it. Even the smaller `gpt-4o` does not support it (which is why I changed the model in this code change).
 
 Using this version kicks off the request against the responses API, using the same `self._post` method but with different parameters:
 
@@ -428,11 +437,29 @@ print(opts)
 method='post' url='/responses' params={} headers=NOT_GIVEN max_retries=NOT_GIVEN timeout=NOT_GIVEN files=None idempotency_key=None post_parser=NOT_GIVEN follow_redirects=None security={'bearer_auth': True} synthesize_event_and_data=None content=None json_data={'input': [{'role': 'user', 'content': 'Extract: John is a 30-year-old software engineer'}], 'model': 'gpt-5.6-luna', 'tool_choice': {'type': 'function', 'name': 'Person'}, 'tools': [{'type': 'function', 'name': 'Person', 'parameters': {'properties': {'name': {'title': 'Name', 'type': 'string'}, 'age': {'title': 'Age', 'type': 'integer'}, 'occupation': {'title': 'Occupation', 'type': 'string'}}, 'required': ['name', 'age', 'occupation'], 'title': 'Person', 'type': 'object', 'additionalProperties': False}, 'description': 'Correctly extracted `Person` with all the required parameters with correct types'}]} extra_json=None
 ```
 
-Aside from the model and URL base path, we can see that the request was still set up by defining the rdesired schema as a tool. In terms of the request, this behavior is identical. 
+Aside from the model and URL base path, we can see that the request was still set up by defining the rdesired schema as a tool. The [`tools`](https://developers.openai.com/api/reference/python/resources/responses/methods/create#(resource)%20responses%20%3E%20(model)%20tool_choice_allowed%20%3E%20(schema)%20%3E%20(property)%20tools) and [`tool_choice`](https://developers.openai.com/api/reference/python/resources/responses/methods/create#(resource)%20responses%20%3E%20(model)%20response%20%3E%20(schema)%20%3E%20(property)%20tool_choice) parameters are also available in the Responses API. In terms of the HTTP request structure, this behavior is identical. 
 
-This is an interesting observation. While the differences between the completions and requests endpoints are worthwhile in terms of functionality and OpenAI recommendations, they're still both glorified tool calls. I don't have further insight into what happens once OpenAI or any provider consumes either request, however. Take this similarity however you want.
+As a final note, here's what happens when we use `instructor.Mode.JSON_SCHEMA`, which implicitly calls the Chat Completions API:
 
-The crucial observation here is that Instructor appears to be opinionated about how it selects a provider's API, but that might not be the end of the world. You can programmatically set API parameters or override Instructor's client functions to taste. Put another way, don't sweat the details unless you have to.
+```
+method='post' 
+url='/chat/completions' (...)
+'model': 'gpt-5.6-luna', 
+'response_format': { (...)'title': 'Person', 'type': 'object'}}}} 
+extra_json=None
+```
+
+This mode uses the [Chat Completions' `response_format` parameter](https://developers.openai.com/api/reference/python/resources/chat/subresources/completions/methods/create#(resource)%20chat.completions%20%3E%20(method)%20create%20%3E%20(params)%20default.non_streaming%20%3E%20(param)%20response_format%20%3E%20(schema)) to inject the schema.
+
+> response_format: Optional[[ResponseFormat](https://developers.openai.com/api/reference/python/resources/chat/subresources/completions/methods/create#(resource) chat.completions > (method) create > (params) default.non_streaming > (param) response_format > (schema))]
+>
+> An object specifying the format that the model must output.
+>
+> Setting to `{ "type": "json_schema", "json_schema": {...} }` enables Structured Outputs which ensures the model will match your supplied JSON schema. Learn more in the [Structured Outputs guide](https://platform.openai.com/docs/guides/structured-outputs). 
+
+The crucial observation here is that Instructor appears to be opinionated about how it selects a provider's API, but that shouldn't stop you from understanding your options and following best practices. You can programmatically set API parameters or override Instructor's client functions to taste. Put another way, don't sweat the details unless you have to.
+
+A sole word of caution, which is true of any platform abstraction library: if the provider changes the API spec, the library must also update. So long as the Instructor team maintains their code API to match the provider, this is a nonissue. But it is something to keep in mind if your solution breaks later down the road.
 
 ### Corner Case: Mixing Output Types
 
@@ -510,7 +537,7 @@ Structured output doesn't come without its costs. One cost is the usage of both 
 
 Earlier, we called out the `tool_choice` object in the parameters. This explicitly tells a model that it must use one specific tool. In the previous examples, the tool is defined based on the base model's schema; this is how it enforces the output format.
 
-Suppose we try to define a simple tool:
+Suppose we try to define a simple tool that follows the [Responses API schema](https://developers.openai.com/api/reference/python/resources/responses/methods/create#(resource)%20responses%20%3E%20(model)%20function_tool%20%3E%20(schema)):
 
 ```python
 get_weather_tool = {
@@ -536,6 +563,12 @@ get_weather_tool = {
 ```
 
 > Note: This tool is spec'ed against the Responses API. Tool definitions for the Chat Completions API are small, but Chat Completions will reject this tool.
+
+I'll pause for a moment and call out something. As far as API providers are concerned, a "tool" is generally something that you, the developer. The LLM's job is to say, "Given the question, what tool do I think is best for the task?" The LLM has no awareness of the tool's definition or expected use cases beyond this context.
+
+So, we have *defined* a tool, but we haven't *implemented* anything it can do. This is fine for a discussion on "What does the LLM see when it uses tools?"
+
+This distinction becomes important when you're developing tools in code and MCP servers, whose frameworks usually abstraction these details from the developer but provid this context to the LLM. For now, we'll accept that we haven't actually implemented this in code. We don't have to for this example.
 
 We can use it in a simple driver code:
 
@@ -706,7 +739,7 @@ Instructor provides the [following guidance on the project's homepage](https://p
 
 Agents can be simple and they can be complex. You can roll your own using a simple while-tool/while-schema logic or you can use a homebuilt framework. Modern agents are sophisticated, but they don't have to be.
 
-Before you refactor your codebase to use agents, I will say that agents come with a huge cost, a literal cost in dollars-and-cents. Agents can consume tens of thousands of tokens and give you invalid answers or bottom-out before they have a chance to finish. This is especially true of prebuilt frameworks, including SmolAgents, PydanticAI, and the Lang\* series.
+Before you refactor your codebase to use agents, I will say that agents can incur a huge cost, a literal cost in dollars-and-cents. Agents can consume tens of thousands of tokens and give you invalid answers or bottom-out before they have a chance to finish. This is especially true of prebuilt frameworks, including SmolAgents, PydanticAI, and the Lang\* series.
 
 If you think you're secretly writing an agent, but you also think your workflow needs to be simple, try this:
 
@@ -715,6 +748,8 @@ If you think you're secretly writing an agent, but you also think your workflow 
 - Set a terminating condition defined by the LLM (for example, this could be a schema or a "done" string from the LLM)
 - For non-terminating conditions, perform actions within the loop based on the tool or schema returned
 - On every loop iteration, track or print your input and output tokens separately
+
+A reference implementation can be found [here](https://modelcontextprotocol.io/docs/develop/build-client).
 
 If the cost of this loop is at least 15-20k tokens, you should accept that you're secretly writing an agent, but deluding yourself into thinking that you're still writing an AI workflow. You can certainly continue with this approach if you're happy with it or if it's cheaper given the use case. 
 
@@ -831,7 +866,7 @@ print(result, result.usage.input_tokens, result.usage.output_tokens)
 
 There are two major differences between the two solutions:
 
-- The `get_weather` tool is now inbuild using PydanticAI's agent native tool definition approach. It looks a little more like how you would define an MCP tool. It's framework-native, platform-agnostic, and readable. This is a Good ThingTM. In reality, the `Agent` constructor has an optional `tools` argument, which accepts a list of ugly tools, MCP clients, and more.
+- The `get_weather` tool is now inbuilt using PydanticAI's agent native tool definition approach. It looks a little more like how you would define an MCP tool. It's framework-native, platform-agnostic, and readable. This is a Good ThingTM. In reality, the `Agent` constructor has an optional `tools` argument, which accepts a list of ugly tools, MCP clients, and more.
 - The agent's constructor accepts an argument called `instructions`. There is no system prompt defined in this solution.
 
 PydanticAI [distinguishes the two](https://pydantic.dev/docs/ai/core-concepts/agent/#instructions):
