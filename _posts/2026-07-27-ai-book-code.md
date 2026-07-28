@@ -1,12 +1,8 @@
-```
+---
 layout: post
 title: Deep Dive Into AI Development for Security Practitioners
 date: 2026-07-27
-```
-
-
-
-# Code Deep Dives
+---
 
 This section was originally part of my review of some good AI reads. I forked it to a new post because the content was, well, the size of a new blog post by the end. Each section here is a deep-dive based on questions I had after going through the books.
 
