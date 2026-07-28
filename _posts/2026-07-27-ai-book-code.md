@@ -869,7 +869,15 @@ There are two major differences between the two solutions:
 - The `get_weather` tool is now inbuilt using PydanticAI's agent native tool definition approach. It looks a little more like how you would define an MCP tool. It's framework-native, platform-agnostic, and readable. This is a Good ThingTM. In reality, the `Agent` constructor has an optional `tools` argument, which accepts a list of ugly tools, MCP clients, and more.
 - The agent's constructor accepts an argument called `instructions`. There is no system prompt defined in this solution.
 
-PydanticAI [distinguishes the two](https://pydantic.dev/docs/ai/core-concepts/agent/#instructions):
+The [`instructions`](https://developers.openai.com/api/reference/python/resources/responses/methods/create#(resource)%20responses%20%3E%20(method)%20create%20%3E%20(params)%20default.non_streaming%20%3E%20(param)%20instructions%20%3E%20(schema)) parameter is defined in the Responses API: 
+
+> A system (or developer) message inserted into the model’s context.
+>
+> When using along with `previous_response_id`, the instructions from a previous response will not be carried over to the next response. This makes it simple to swap out system (or developer) messages in new responses.
+
+So, this is more of a convenience when processing chains of thought between the agent's internal multishots. The key factor is that it still serves as a privileged prompt, which a user prompt cannot override or replace. Functionally, this should serve as a system prompt which is better suited for an agentic context.
+
+PydanticAI also [distinguishes when to use one or the other](https://pydantic.dev/docs/ai/core-concepts/agent/#instructions):
 
 > You should use:
 >
@@ -878,7 +886,7 @@ PydanticAI [distinguishes the two](https://pydantic.dev/docs/ai/core-concepts/ag
 >
 > In general, we recommend using `instructions` instead of `system_prompt` unless you have a specific reason to use `system_prompt`.
 
-For now, let's run with the assumption that we should use *instructions* and not system prompts.
+For now, let's run with the assumption that we should use *instructions* and not assume that the `system_prompt` will behave as it did in other frameworks.
 
 Unlike in the other solution, we actually implemented the tool, instead of just describing it. As a convenience, we implemented it in such a way that prints when it is invoked.
 
@@ -886,6 +894,37 @@ Unlike in the other solution, we actually implemented the tool, instead of just 
 Tool invocation...
 AgentRunResult(output=CalendarEvent(name='Beach day in Tokyo (sunny-weather plan)', date='2027-08-01', participants=['Alice', 'Sally'])) 468 199
 ```
+
+As we did with instructor, we can debug a path to the point where the underlying OpenAI library's request is made.
+
+```
+class AsyncAPIClient(BaseClient[httpx.AsyncClient, AsyncStream[Any]]):
+    ...
+    async def request(
+        ...
+            request = self._build_request(options, retries_taken=retries_taken)
+            ...
+            try:
+                response = await self._send_request(
+```
+
+Dump the `request` object to analyze its content:
+
+```
+print(request)
+<Request('POST', 'https://api.openai.com/v1/responses')>
+
+print(options.json_data["instructions"])
+"Answer the user's question"
+
+options.json_data["input"]
+[{'role': 'user', 'content': "Alice and Sally want to see a movie in Tokyo, Japan on Aug 01, 2027, but if it...akes this it so hard to plan these things!'}]
+
+options.json_data.get("messages") or "messages key not found"
+'messages key not found'
+```
+
+True to the Requests API guidance, the `instructions` now serve as the `system_prompt` from the earlier discussion, and `input` replaces the use of `messages` altogether. This should preserve our assumptions about the overall prompt security and the model's overall reasoning.
 
 Here's the cost breakdown of the first five runs of the agent-less solution:
 
