@@ -4,6 +4,14 @@ title: LLM Workflows for Vulnerability Triage
 date: 2026-07-29
 ---
 
+<script type="module">
+  import mermaid from '/assets/js/mermaid/mermaid.esm.min.mjs';
+  mermaid.initialize({ startOnLoad: true });
+  document.querySelectorAll('pre > code.language-mermaid').forEach((codeBlock) => {
+    codeBlock.parentElement.outerHTML = `<pre class="mermaid">${codeBlock.textContent}</pre>`;
+  });
+</script>
+
 My interest in AI workflows was sparked by a talk from Black Hills InfoSec at a B-Sides event in 2026. The speaker distinguished between "agent workflows" and "LLM workflows." The overall argument is that many workflows benefit from the LLM step, not only in terms of cost, scope, and time, but also of cost. It was the first time I had considered this in a Cybersecurity context.
 
 One of the demonstrations involved an n8n workflow that performed triage against a [Prowler](https://github.com/prowler-cloud/prowler) cloud finding. In many ways, this post continues that thinking within an Application Security context. 
