@@ -666,10 +666,12 @@ print(f"True Positive Count: {true_pos}")
 print(f"True Positives Rate: {tp_rate}")
 print(f"False Positives Rate: {fp_rate}")
 print()
-print(f"Input Cost: {(input_tokens/1_000_000) * 10.00}")
-print(f"Output Cost: {(output_tokens/1_000_000) * 30.00}")
+print(f"Input Cost: ${(input_tokens/1_000_000) * 10.00}")
+print(f"Output Cost: ${(output_tokens/1_000_000) * 30.00}")
 print()
-print(f"Priority findings: {len(priority)}/{true_pos} ({len(priority)/len(vulns):.2f}%)")
+print(f"Priority findings:")
+print(f"  {len(priority)}/{len(vulns)} ({(len(priority)/len(vulns))*100:.2f}%)")
+print(f"  {(len(priority)/true_pos} ({(len(priority)/true_pos)*100:.2f}%)")
 ```
 
 Here, I'm using `gpt-5.6-sol` because the price for the task is reasonable, and because I don't mind putting a little bit more upfront to prove that the approach has merit. The sampled findings we ran ad-hoc earlier were fine, but *all* valid findings may struggle with lighter models. That said, as development continues, you should fine-tune the workflow to avoid relying on a brittle one.
@@ -681,10 +683,12 @@ True Positive Count: 27
 True Positives Rate: 0.7297297297297297
 False Positives Rate: 0.2702702702702703
 
-Input Cost: 0.7174800000000001
-Output Cost: 0.27204
+Input Cost: $0.7174800000000001
+Output Cost: $0.27204
 
-Priority findings: 12/27 (0.16%)
+Priority findings: 
+  12/77 (15.58%) - Priority of all results
+  12/27 (44.44%) - Priority within critical and high results
 ```
 
 The bottom line for this highly-catered run is barely over a dollar.
